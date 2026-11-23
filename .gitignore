@@ -1,0 +1,27 @@
+# .NET build output
+**/bin/
+**/obj/
+**/TestResults/
+
+# Node / Angular
+**/node_modules/
+**/dist/
+**/.angular/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+**/secrets.json
+
+# Local SDK/tool installations and IDE state
+**/.dotnet/
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.user
+*.suo
+*.swp
+*.log

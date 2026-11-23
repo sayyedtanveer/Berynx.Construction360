@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Berynx.Api/Berynx.Api.csproj" />
+    <Project Path="src/Berynx.Application/Berynx.Application.csproj" />
+    <Project Path="src/Berynx.Domain/Berynx.Domain.csproj" />
+    <Project Path="src/Berynx.Infrastructure/Berynx.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Berynx.UnitTests/Berynx.UnitTests.csproj" />
+    <Project Path="tests/Berynx.IntegrationTests/Berynx.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

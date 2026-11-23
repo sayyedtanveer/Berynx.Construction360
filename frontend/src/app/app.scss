@@ -1,0 +1,85 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.topbar {
+  align-items: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  min-height: 4.5rem;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+}
+
+.brand {
+  align-items: center;
+  color: var(--ink);
+  display: inline-flex;
+  font-size: 1rem;
+  font-weight: 750;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+
+.brand-mark {
+  align-items: center;
+  background: var(--brand);
+  border-radius: 0.75rem;
+  color: white;
+  display: inline-flex;
+  font-size: 0.8rem;
+  height: 2.5rem;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  width: 2.5rem;
+}
+
+.topbar-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.global-error {
+  align-items: center;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  border-radius: 0.75rem;
+  color: var(--danger-ink);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin: 1rem auto 0;
+  max-width: 72rem;
+  padding: 0.875rem 1rem;
+  width: calc(100% - 2rem);
+}
+
+.global-error button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  min-height: 2.75rem;
+  padding: 0.5rem;
+}
+
+main {
+  width: 100%;
+}
+
+@media (max-width: 40rem) {
+  .topbar-note {
+    font-size: 0.75rem;
+    text-align: right;
+  }
+}
