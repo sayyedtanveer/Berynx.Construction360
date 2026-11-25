@@ -34,13 +34,81 @@ public static class OnboardingEndpoints
                 accounts = await access.HasPermission(user.UserId, "opening.edit", ct)
             });
         });
+        app.MapGet("/api/v1/auth/navigation", async (
+            ClaimsPrincipal p, IM02Access access, TenantEntitlementService entitlements,
+            BerynxDbContext db, CancellationToken ct) =>
+        {
+            if (p.IsInRole("PlatformAdmin"))
+                return Results.Ok(new { platform = true, modules = new[] { "PLATFORM" }, permissions = Array.Empty<string>() });
+            var user = await access.CurrentUser(ct);
+            var permissions = await (
+                from assignment in db.Set<M02UserRole>()
+                join grant in db.Set<M02RolePermission>()
+                    on new { assignment.TenantId, assignment.RoleId }
+                    equals new { grant.TenantId, grant.RoleId }
+                where assignment.UserId == user.UserId
+                select grant.PermissionCode
+            ).Distinct().OrderBy(x => x).ToListAsync(ct);
+            return Results.Ok(new
+            {
+                platform = false,
+                modules = await entitlements.EnabledModules(ct),
+                permissions
+            });
+        }).RequireAuthorization(policy => policy.RequireClaim("sub").RequireClaim("tenant_id"));
         var platform = app.MapGroup("/api/v1/platform/tenants").RequireAuthorization(p => p.RequireRole("PlatformAdmin").RequireClaim("sub"));
-        platform.MapGet("", async (BerynxDbContext db, int? page) => await db.Set<Tenant>().IgnoreQueryFilters().OrderBy(t => t.Name).ThenBy(t => t.TenantId).Skip(Math.Clamp((page ?? 1) - 1, 0, 100000) * 50).Take(50).Select(t => new { t.TenantId, t.Name, t.Plan, t.Status, t.Version, exportUntil = t.CancelledAt.HasValue ? (DateTimeOffset? )t.CancelledAt.Value.AddDays(30) : null }).ToListAsync());
-        platform.MapPost("", async (Provision r, DbContextOptions<BerynxDbContext> options, IConfiguration cfg,
+        platform.MapGet("", async (BerynxDbContext db, int? page, CancellationToken ct) =>
+        {
+            var tenants = await db.Set<Tenant>().IgnoreQueryFilters()
+                .OrderBy(t => t.Name).ThenBy(t => t.TenantId)
+                .Skip(Math.Clamp((page ?? 1) - 1, 0, 100000) * 50).Take(50)
+                .ToListAsync(ct);
+            var subscriptionIds = tenants.Where(t => t.CurrentSubscriptionId.HasValue)
+                .Select(t => t.CurrentSubscriptionId!.Value).ToArray();
+            var subscriptions = await db.Set<TenantSubscription>().IgnoreQueryFilters()
+                .Where(s => subscriptionIds.Contains(s.SubscriptionId))
+                .ToDictionaryAsync(s => s.SubscriptionId, ct);
+            return tenants.Select(t => new
+            {
+                t.TenantId,
+                t.Name,
+                t.Plan,
+                status = t.CurrentSubscriptionId is { } id && subscriptions.TryGetValue(id, out var subscription)
+                    ? SubscriptionLifecycle.EffectiveStatus(subscription, DateTimeOffset.UtcNow)
+                    : t.Status,
+                t.Version,
+                exportUntil = t.CancelledAt?.AddDays(30)
+            });
+        });
+        platform.MapPost("", async (PlatformSaaSEndpoints.TenantProvisionRequest r, DbContextOptions<BerynxDbContext> options, IConfiguration cfg,
             UserManager<M02IdentityUser> identityUsers, ClaimsPrincipal p, HttpContext http) =>
         {
             var scope = new PlatformScope(r.RequestId);
             await using var db = new BerynxDbContext(options, scope);
+            var plan = await db.Set<PlatformPlan>().SingleOrDefaultAsync(x => x.PlanCode == r.Plan && x.IsActive);
+            if (plan is null)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["plan"] = ["Choose an active catalogue plan."] });
+            var included = await db.Set<PlatformPlanModule>().AsNoTracking()
+                .Where(x => x.PlanCode == plan.PlanCode).Select(x => x.ModuleCode).ToArrayAsync();
+            var modulesCatalog = await db.Set<PlatformModule>().AsNoTracking()
+                .Where(x => x.IsActive).ToListAsync();
+            var addons = r.AddOnModules ?? [];
+            var addonCodes = addons.ToHashSet(StringComparer.Ordinal);
+            var includedActiveCount = included.Count(code =>
+                modulesCatalog.Any(module => module.ModuleCode == code));
+            if (addonCodes.Count != addons.Length ||
+                modulesCatalog.Where(x => addonCodes.Contains(x.ModuleCode) && !x.IsCore).Count() != addonCodes.Count ||
+                includedActiveCount != included.Length ||
+                included.Any(addonCodes.Contains) ||
+                !modulesCatalog.Where(x => x.IsCore).All(x => included.Contains(x.ModuleCode, StringComparer.Ordinal)))
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["addOnModules"] = ["Choose active non-core add-ons; the plan must include all core modules."]
+                });
+            var modules = included.Concat(addons).Distinct(StringComparer.Ordinal).ToArray();
+            var limits = new Limits(plan.MaxUsers, plan.MaxStorageBytes,
+                plan.MaxDocumentsPerMonth, plan.MaxMessagesPerMonth, plan.MaxApiRequestsPerMonth);
+            var provision = new Provision(r.RequestId, r.Name, plan.PlanCode, r.AdminEmail, modules, limits);
             var store = new OnboardingStore(db, scope)
             {
                 Origin = Origin(http)
@@ -50,7 +118,7 @@ public static class OnboardingEndpoints
             {
                 if (existing.Actor != Actor(p) ||
                     !JsonElement.DeepEquals(JsonSerializer.Deserialize<JsonElement>(existing.After),
-                        JsonSerializer.SerializeToElement(r, Workflow.Json)))
+                        JsonSerializer.SerializeToElement(provision, Workflow.Json)))
                     return Results.Conflict();
             }
             else
@@ -62,17 +130,34 @@ public static class OnboardingEndpoints
                 defaults.Ledgers = cfg.GetSection("Onboarding:ChartOfAccounts").Get<LedgerDefinition[]>() ?? defaults.Ledgers;
                 defaults.NumberingDefaults = SetupRules.Documents.ToDictionary(d => d,
                     d => cfg[$"Onboarding:Numbering:{d}"] ?? "{FY}/{SEQ:4}");
-                await store.Create(r, Actor(p), defaults);
+                await store.Create(provision, Actor(p), defaults);
             }
-            await EnsureFirstAdminIdentity(r, db, identityUsers, http.RequestAborted);
+            var tenant = await db.Set<Tenant>().SingleAsync();
+            if (tenant.CurrentSubscriptionId is null)
+            {
+                PlatformSaaSEndpoints.CreateInitialSubscription(
+                    db, tenant, plan, included, addons, p, http, DateTimeOffset.UtcNow);
+                tenant.Version++;
+                await db.SaveChangesAsync();
+            }
+            await EnsureFirstAdminIdentity(provision, db, identityUsers, http.RequestAborted);
             return Results.Created($"/api/v1/platform/tenants/{r.RequestId}", new { tenantId = r.RequestId });
         });
         platform.MapPost("/{id:guid}/status", async (Guid id, Command c, DbContextOptions<BerynxDbContext> options, ClaimsPrincipal p, HttpContext http) =>
         {
             var scope = new PlatformScope(id);
             await using var db = new BerynxDbContext(options, scope);
+            var currentTenant = await db.Set<Tenant>().SingleOrDefaultAsync();
+            if (currentTenant is null)
+                return Results.NotFound();
+            if (currentTenant.CurrentSubscriptionId is not null)
+                return Results.Conflict(new { detail = "Use the subscription activation and lifecycle controls for catalog-backed tenants." });
             var change = c.Data.Read<StatusChange>();
             Workflow.Require(!string.IsNullOrWhiteSpace(change.Reason), "Provide a lifecycle change reason.");
+            PlatformSaaSEndpoints.AddAudit(
+                db, id, p, http, id, "Legacy tenant lifecycle changed", "Tenant", change.Reason,
+                JsonSerializer.Serialize(new { currentTenant.Status }, Workflow.Json),
+                JsonSerializer.Serialize(new { change.Status }, Workflow.Json));
             var store = new OnboardingStore(db, scope)
             {
                 Origin = Origin(http)
@@ -97,21 +182,33 @@ public static class OnboardingEndpoints
         {
             var t = await store.Current();
             var s = OnboardingStore.Decode(t);
+            var subscription = t.CurrentSubscriptionId is { } subscriptionId
+                ? await db.Set<TenantSubscription>().AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.SubscriptionId == subscriptionId)
+                : null;
             var volume = await db.Database.SqlQuery<long>($"""
                 SELECT count(*) AS "Value" FROM onboarding_number WHERE tenant_id={t.TenantId}
                 AND posted_at>=date_trunc('month',now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
                 """).SingleAsync();
             var messages = await db.Set<SetupEvent>().LongCountAsync(x => x.Action == "Invitation delivered");
+            var users = await db.Set<M02User>().LongCountAsync(
+                x => x.Status == "Active" || x.Status == "Invited");
+            var currentMonth = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+            var apiRequests = await db.Set<TenantApiUsage>().AsNoTracking()
+                .Where(x => x.MonthStart == currentMonth).Select(x => x.RequestCount).SingleOrDefaultAsync();
             return new
             {
                 t.Plan,
-                t.Status,
+                status = subscription is null
+                    ? t.Status
+                    : SubscriptionLifecycle.EffectiveStatus(subscription, DateTimeOffset.UtcNow),
                 metrics = new[]
                 {
-                    Metric("Users", s.Invitations.Count, s.Limits.Users),
+                    Metric("Users", users, s.Limits.Users),
                     Metric("Storage (bytes)", await store.Storage(s), s.Limits.Storage),
                     Metric("Documents this month", volume, s.Limits.Documents),
-                    Metric("Messages sent", messages, s.Limits.Messages)
+                    Metric("Messages sent", messages, s.Limits.Messages),
+                    Metric("API requests this month", apiRequests, s.Limits.ApiRequests)
                 }
             };
         });
@@ -174,15 +271,18 @@ public static class OnboardingEndpoints
         var user = http.User;
         if (user.HasClaim(c => c.Type == "branch_id"))
             return Results.Forbid();
+        var authorization = http.RequestServices.GetRequiredService<TenantAuthorizationService>();
+        var isExport = http.Request.Path.Value == "/api/v1/onboarding/export";
         var store = http.RequestServices.GetRequiredService<OnboardingStore>();
         store.Origin = Origin(http);
         var t = await store.Current();
         if (t.Status == "Cancelled" && http.Request.Path.Value != "/api/v1/onboarding/export")
             return Results.Forbid();
-        var access = http.RequestServices.GetRequiredService<IM02Access>();
-        var current = await access.CurrentUser(http.RequestAborted);
-        if (!await access.CanAccess(current.UserId, AccessPermission(http.Request.Path.Value, http.Request.Method),
-                null, null, null, http.RequestAborted))
+        var current = await authorization.CurrentUser(http.RequestAborted);
+        if (!await authorization.CanAccess("M01", current.UserId,
+                AccessPermission(http.Request.Path.Value, http.Request.Method),
+                null, null, null, http.RequestAborted, isExport,
+                !HttpMethods.IsGet(http.Request.Method)))
             return Results.Forbid();
         if (HttpMethods.IsGet(http.Request.Method))
             http.Response.Headers.ETag = $"\"{t.Version}\"";

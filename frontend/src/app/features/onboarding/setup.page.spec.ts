@@ -12,12 +12,27 @@ describe('Setup screens', () => {
     session: object = { authenticated: true, admin: true },
   ) {
     const calls: string[] = [];
+    const requests: Array<{ method: string; path: string; body?: unknown }> = [];
     const client = {
       get: (path: string) => {
         calls.push(path);
-        return of(path === 'auth/session' ? session : state);
+        const data = state as Record<string, unknown>;
+        if (path === 'auth/session') return of(session);
+        if (path === 'platform/plans') return of(data['plans'] ?? []);
+        if (path === 'platform/modules') return of(data['modules'] ?? []);
+        if (path.startsWith('platform/tenants?page=')) return of(data['tenants'] ?? []);
+        if (path.startsWith('platform/tenants/')) return of(data['tenantDetail'] ?? {});
+        if (path.startsWith('onboarding/usage')) return of(data);
+        return of(data);
       },
-      post: () => of({ rows: [], difference: 0, errors: [] }),
+      post: (path: string, body?: unknown) => {
+        requests.push({ method: 'POST', path, body });
+        return of({ rows: [], difference: 0, errors: [], tenantId: 'tenant-1' });
+      },
+      put: (path: string, body?: unknown) => {
+        requests.push({ method: 'PUT', path, body });
+        return of({});
+      },
     };
     await TestBed.configureTestingModule({
       imports: [SetupPage],
@@ -33,7 +48,7 @@ describe('Setup screens', () => {
     await initialLoad.mock.results[0].value;
     await fixture.whenStable();
     fixture.detectChanges();
-    return { fixture, calls, element: fixture.nativeElement as HTMLElement };
+    return { fixture, calls, requests, element: fixture.nativeElement as HTMLElement };
   }
   it('disables go-live and links a failed check to the correct form', async () => {
     const { element } = await render('checklist', {
@@ -55,5 +70,46 @@ describe('Setup screens', () => {
     expect(element.querySelector('[role="alert"]')?.textContent).toContain(
       'Platform administrator',
     );
+  });
+  it('loads the platform tenant workspace only for a PlatformAdmin session', async () => {
+    const { calls, element } = await render(
+      'platform',
+      { plans: [], modules: [], tenants: [] },
+      { authenticated: true, platform: true },
+    );
+    expect(calls).toEqual([
+      'auth/session',
+      'platform/plans',
+      'platform/modules',
+      'platform/tenants?page=1',
+    ]);
+    expect(element.textContent).toContain('Create tenant');
+    expect(element.textContent).toContain('Create a plan');
+  });
+  it('includes the monthly API request quota when creating a plan', async () => {
+    const { fixture, requests } = await render(
+      'plans',
+      {
+        plans: [],
+        modules: [
+          { moduleCode: 'M01', name: 'Onboarding', isCore: true, isActive: true },
+          { moduleCode: 'M02', name: 'Identity', isCore: true, isActive: true },
+        ],
+      },
+      { authenticated: true, platform: true },
+    );
+    fixture.componentInstance.planForm['planCode'] = 'launch';
+    fixture.componentInstance.planForm['name'] = 'Launch';
+    fixture.componentInstance.planForm['maxUsers'] = 10;
+    fixture.componentInstance.planForm['maxStorageBytes'] = 100000;
+    fixture.componentInstance.planForm['maxDocumentsPerMonth'] = 1000;
+    fixture.componentInstance.planForm['maxMessagesPerMonth'] = 100;
+    fixture.componentInstance.planForm['maxApiRequestsPerMonth'] = 50000;
+    fixture.componentInstance.planForm['trialDays'] = 14;
+    await fixture.componentInstance.savePlan();
+
+    expect(requests.find((request) => request.path === 'platform/plans')?.body).toMatchObject({
+      maxApiRequestsPerMonth: 50000,
+    });
   });
 });

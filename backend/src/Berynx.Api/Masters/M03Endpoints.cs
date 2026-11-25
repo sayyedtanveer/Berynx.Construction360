@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using System.Xml.Linq;
 using Berynx.Api.IdentityAccess;
+using Berynx.Api.Onboarding;
 using Berynx.Application.IdentityAccess;
 using Berynx.Application.Masters;
 using Berynx.Application.Tenancy;
@@ -85,6 +86,15 @@ public static class M03Endpoints
     {
         var api = app.MapGroup("/api/v1/m03")
             .RequireAuthorization(policy => policy.RequireClaim("sub").RequireClaim("tenant_id"));
+        api.AddEndpointFilter(async (context, next) =>
+        {
+            var authorization = context.HttpContext.RequestServices.GetRequiredService<TenantAuthorizationService>();
+            await authorization.RequireModule(
+                "M03",
+                !HttpMethods.IsGet(context.HttpContext.Request.Method),
+                cancellationToken: context.HttpContext.RequestAborted);
+            return await next(context);
+        });
 
         api.MapGet("/parties", ListParties);
         api.MapGet("/capabilities", Capabilities);

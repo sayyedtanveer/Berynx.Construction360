@@ -1,12 +1,15 @@
 using System.Net;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Berynx.Api.IdentityAccess;
+using Berynx.Api.Onboarding;
 using Berynx.Application.Tenancy;
 using Berynx.Domain.IdentityAccess;
 using Berynx.Domain.Onboarding;
 using Berynx.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -162,6 +165,106 @@ public sealed class M02AuthenticationTests
             auth.Refresh(selected.RefreshToken!, CancellationToken.None));
         Assert.That(await auth.ValidateSession(tenantOne, identity.Id, sessionId, CancellationToken.None), Is.False);
 
+    }
+
+    [TestCase("Grace")]
+    [TestCase("Suspended")]
+    [TestCase("Cancelled")]
+    public async Task ReadOnlyTenantLifecycleRetainsLoginAndSessionValidation(string status)
+    {
+        const string email = "read-only-lifecycle@example.invalid";
+        var identity = await CreateIdentity(email, "SafePass123");
+        await AddMembership(tenantOne, identity.Id, email, "Active");
+        await using var tenantDb = Open(tenantOne);
+        var tenant = await tenantDb.Set<Tenant>().SingleAsync();
+        var originalStatus = tenant.Status;
+        var originalCancelledAt = tenant.CancelledAt;
+        tenant.Status = status;
+        tenant.CancelledAt = status == "Cancelled" ? DateTimeOffset.UtcNow.AddDays(-1) : null;
+        await tenantDb.SaveChangesAsync();
+
+        try
+        {
+            using var scope = services.CreateScope();
+            var auth = scope.ServiceProvider.GetRequiredService<M02AuthenticationService>();
+            var login = await auth.Login(email, "SafePass123", CancellationToken.None);
+            Assert.That(login.AccessToken, Is.Not.Null);
+            var sessionId = ReadSessionId(login.AccessToken!);
+            Assert.That(await auth.ValidateSession(tenantOne, identity.Id, sessionId, CancellationToken.None), Is.True);
+        }
+        finally
+        {
+            tenant.Status = originalStatus;
+            tenant.CancelledAt = originalCancelledAt;
+            await tenantDb.SaveChangesAsync();
+        }
+    }
+
+    [Test]
+    public async Task SuspendedSubscriptionAllowsReadButDeniesWriteModuleAccess()
+    {
+        const string email = "suspended-module@example.invalid";
+        var identity = await CreateIdentity(email, "SafePass123");
+        var membership = await AddMembership(tenantOne, identity.Id, email, "Active");
+        var now = DateTimeOffset.UtcNow;
+        await using var tenantDb = Open(tenantOne);
+        var tenant = await tenantDb.Set<Tenant>().SingleAsync();
+        var setup = OnboardingStore.Decode(tenant);
+        setup.Modules = ["M02"];
+        setup.Limits = new Limits(10, 1_000_000, 100, 100, 1_000);
+        tenant.Configuration = OnboardingStore.Encode(setup);
+        tenant.Status = SubscriptionLifecycle.Suspended;
+        var subscription = new TenantSubscription
+        {
+            TenantId = tenantOne,
+            SubscriptionId = Guid.NewGuid(),
+            PlanCode = "suspended-test",
+            PlanVersion = 1,
+            Status = SubscriptionLifecycle.Suspended,
+            StartsAt = now.AddDays(-30),
+            EndsAt = now.AddDays(-1),
+            GraceEndsAt = now.AddDays(-1)
+        };
+        tenant.CurrentSubscriptionId = subscription.SubscriptionId;
+        tenantDb.Add(new PlatformPlan
+        {
+            PlanCode = subscription.PlanCode,
+            Name = "Integration test plan",
+            MaxUsers = 10,
+            MaxStorageBytes = 1_000_000,
+            MaxDocumentsPerMonth = 100,
+            MaxMessagesPerMonth = 100,
+            MaxApiRequestsPerMonth = 1_000,
+            TrialDays = 14,
+            GracePeriodDays = 0
+        });
+        tenantDb.Add(new PlatformModule { ModuleCode = "M02", Name = "Identity", IsCore = true });
+        tenantDb.Add(subscription);
+        tenantDb.Add(new TenantModuleEntitlement
+        {
+            TenantId = tenantOne,
+            ModuleCode = "M02",
+            Source = "Plan",
+            IsEnabled = true,
+            EffectiveFrom = now.AddDays(-30)
+        });
+        await tenantDb.SaveChangesAsync();
+
+        var context = new DefaultHttpContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", identity.Id.ToString("D")),
+            new Claim("tenant_id", tenantOne.ToString("D")),
+            new Claim("user_id", membership.UserId.ToString("D"))
+        ], "integration-test"));
+        var authorization = new TenantEntitlementService(
+            tenantDb,
+            new Scope(tenantOne),
+            new HttpContextAccessor { HttpContext = context });
+
+        await Assert.DoesNotThrowAsync(() => authorization.RequireModule("M02", write: false));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => authorization.RequireModule("M02", write: true));
     }
 
     [Test]

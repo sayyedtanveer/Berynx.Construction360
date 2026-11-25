@@ -41,6 +41,7 @@ public sealed class ApiExceptionHandler(
             Detail = statusCode switch
             {
                 400 => exception.Message,
+                429 => exception.Message,
                 409 => "The record changed or violates a protected business constraint. Reload and retry.",
                 _ => null
             },
@@ -67,6 +68,7 @@ public sealed class ApiExceptionHandler(
         exception switch
         {
             UnauthorizedAccessException => isAuthenticationEndpoint || !isAuthenticated ? 401 : 403,
+            Berynx.Api.Onboarding.TenantApiQuotaExceededException => 429,
             KeyNotFoundException => 404,
             System.ComponentModel.DataAnnotations.ValidationException or System.Text.Json.JsonException or InvalidDataException => 400,
             Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException => 409,

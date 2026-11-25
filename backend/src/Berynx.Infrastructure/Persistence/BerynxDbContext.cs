@@ -34,6 +34,103 @@ public sealed class BerynxDbContext(
             e.HasKey(t => t.TenantId);
             e.Property(t => t.Version).IsConcurrencyToken();
             e.Property(t => t.Configuration).HasColumnType("jsonb");
+            e.HasIndex(t => t.CurrentSubscriptionId);
+            e.HasOne<TenantSubscription>().WithMany()
+                .HasForeignKey(t => new { t.TenantId, t.CurrentSubscriptionId })
+                .HasPrincipalKey(s => new { s.TenantId, s.SubscriptionId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<PlatformPlan>(e =>
+        {
+            e.ToTable("platform_plan", table =>
+                table.HasCheckConstraint("CK_platform_plan_quotas",
+                    "\"MaxUsers\" > 0 AND \"MaxStorageBytes\" > 0 AND \"MaxDocumentsPerMonth\" > 0 AND \"MaxMessagesPerMonth\" > 0 AND \"MaxApiRequestsPerMonth\" > 0 AND \"TrialDays\" > 0 AND \"GracePeriodDays\" >= 0 AND (\"PriceAmount\" IS NULL OR \"PriceAmount\" >= 0)"));
+            e.HasKey(x => x.PlanCode);
+            e.Property(x => x.PlanCode).HasMaxLength(48);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.PriceAmount).HasPrecision(18, 2);
+            e.Property(x => x.Version).IsConcurrencyToken();
+        });
+        modelBuilder.Entity<PlatformModule>(e =>
+        {
+            e.ToTable("platform_module");
+            e.HasKey(x => x.ModuleCode);
+            e.Property(x => x.ModuleCode).HasMaxLength(48);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Description).HasMaxLength(1000);
+        });
+        modelBuilder.Entity<PlatformPlanModule>(e =>
+        {
+            e.ToTable("platform_plan_module");
+            e.HasKey(x => new { x.PlanCode, x.ModuleCode });
+            e.HasOne<PlatformPlan>().WithMany().HasForeignKey(x => x.PlanCode)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<PlatformModule>().WithMany().HasForeignKey(x => x.ModuleCode)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<TenantSubscription>(e =>
+        {
+            e.ToTable("platform_tenant_subscription", table =>
+            {
+                table.HasCheckConstraint("CK_platform_tenant_subscription_status",
+                    "\"Status\" IN ('Trial', 'Active', 'Grace', 'Suspended', 'Cancelled')");
+                table.HasCheckConstraint("CK_platform_tenant_subscription_term",
+                    "\"EndsAt\" IS NULL OR \"StartsAt\" < \"EndsAt\"");
+                table.HasCheckConstraint("CK_platform_tenant_subscription_grace",
+                    "\"GraceEndsAt\" IS NULL OR (\"EndsAt\" IS NOT NULL AND \"GraceEndsAt\" >= \"EndsAt\")");
+            });
+            e.HasKey(x => new { x.TenantId, x.SubscriptionId });
+            e.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PlatformPlan>().WithMany().HasForeignKey(x => x.PlanCode)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.PlanCode).HasMaxLength(48);
+            e.Property(x => x.Status).HasMaxLength(24);
+            e.Property(x => x.TermsSnapshot).HasColumnType("jsonb");
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.TenantId, x.IsCurrent })
+                .IsUnique()
+                .HasFilter("\"IsCurrent\" = TRUE");
+            e.HasIndex(x => new { x.TenantId, x.Status, x.EndsAt });
+        });
+        modelBuilder.Entity<TenantModuleEntitlement>(e =>
+        {
+            e.ToTable("platform_tenant_entitlement", table =>
+                table.HasCheckConstraint("CK_platform_tenant_entitlement_source",
+                    "\"Source\" IN ('Plan', 'AddOn')"));
+            e.HasKey(x => new { x.TenantId, x.ModuleCode });
+            e.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PlatformModule>().WithMany().HasForeignKey(x => x.ModuleCode)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Source).HasMaxLength(24);
+            e.HasIndex(x => new { x.TenantId, x.IsEnabled, x.EffectiveUntil });
+        });
+        modelBuilder.Entity<SaaSLicenseAuditEvent>(e =>
+        {
+            e.ToTable("platform_license_audit");
+            e.HasKey(x => new { x.TenantId, x.EventId });
+            e.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.ActorEmail).HasMaxLength(256);
+            e.Property(x => x.Action).HasMaxLength(80);
+            e.Property(x => x.EntityType).HasMaxLength(80);
+            e.Property(x => x.Reason).HasMaxLength(1000);
+            e.Property(x => x.Before).HasColumnType("jsonb");
+            e.Property(x => x.After).HasColumnType("jsonb");
+            e.Property(x => x.Origin).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.TenantId, x.At });
+        });
+        modelBuilder.Entity<TenantApiUsage>(e =>
+        {
+            e.ToTable("platform_tenant_api_usage", table =>
+                table.HasCheckConstraint("CK_platform_tenant_api_usage_count", "\"RequestCount\" >= 0"));
+            e.HasKey(x => new { x.TenantId, x.MonthStart });
+            e.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.MonthStart).HasColumnType("date");
         });
         modelBuilder.Entity<OpeningItem>(e => {
             e.ToTable("onboarding_opening");

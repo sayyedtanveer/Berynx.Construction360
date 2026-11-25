@@ -9,6 +9,7 @@ public sealed class Tenant : ITenantOwned
     public string Name { get; set; } = "";
     public string Plan { get; set; } = "";
     public string Status { get; set; } = "Trial";
+    public Guid? CurrentSubscriptionId { get; set; }
     public long Version { get; set; }
     public DateTimeOffset? LiveAt { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
@@ -57,7 +58,7 @@ public sealed record Series(Guid BranchId, string Document, string Prefix, strin
 public sealed record Invitation(string Email, string Role, DateTimeOffset At);
 public sealed record LedgerDefinition(string Code, string Name, string Group);
 public sealed record MasterSeed(string Kind, string Reference, string Name);
-public sealed record Limits(long Users, long Storage, long Documents, long Messages);
+public sealed record Limits(long Users, long Storage, long Documents, long Messages, long ApiRequests = 0);
 public sealed class Setup
 {
     public string Currency { get; set; } = "INR";
@@ -137,7 +138,7 @@ public static class SetupRules
     {
         if (tenant.Status == next)
             return;
-        if ((tenant.Status, next)is not (("Trial", "Active" or "Suspended" or "Cancelled") or ("Active", "Suspended" or "Cancelled") or ("Suspended", "Active" or "Cancelled")))
+        if ((tenant.Status, next)is not (("Trial", "Active" or "Grace" or "Suspended" or "Cancelled") or ("Active", "Grace" or "Suspended" or "Cancelled") or ("Grace", "Active" or "Suspended" or "Cancelled") or ("Suspended", "Active" or "Cancelled")))
             throw new ValidationException("Invalid tenant lifecycle transition.");
         tenant.Status = next;
         if (next == "Cancelled")

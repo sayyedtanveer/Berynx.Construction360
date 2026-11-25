@@ -25,6 +25,31 @@ export class SetupPage implements OnInit {
   state: Row = {};
   session: Row = {};
   tenants: Row[] = [];
+  plans: Row[] = [];
+  modules: Row[] = [];
+  addonModules: Row[] = [];
+  tenantDetail: Row | null = null;
+  tenantAudit: Row[] = [];
+  selectedTenant: Row | null = null;
+  assignment: Row = {};
+  actionReason = '';
+  actionEndsAt = '';
+  planForm: Row = {
+    planCode: '',
+    name: '',
+    description: '',
+    maxUsers: null,
+    maxStorageBytes: null,
+    maxDocumentsPerMonth: null,
+    maxMessagesPerMonth: null,
+    maxApiRequestsPerMonth: null,
+    trialDays: null,
+    gracePeriodDays: 0,
+    priceAmount: null,
+    currency: 'INR',
+    includedModules: [],
+    version: 0,
+  };
   requestId = crypto.randomUUID();
   loading = true;
   busy = false;
@@ -32,9 +57,6 @@ export class SetupPage implements OnInit {
   notice = '';
   difference: number | null = null;
   previewErrors: string[] = [];
-  reason = '';
-  status = '';
-  selected: Row | null = null;
   pageNumber = 1;
   generation = 0;
   get locked() {
@@ -63,12 +85,39 @@ export class SetupPage implements OnInit {
         else throw Error('Your identity has no onboarding role.');
         return;
       }
-      if (this.page === 'platform' || this.page === 'create') {
+      if (this.page === 'platform' || this.page === 'create' || this.page === 'plans') {
         if (!this.session['platform']) throw Error('Platform administrator access is required.');
-        if (this.page === 'platform')
+        [this.plans, this.modules] = await Promise.all([
+          firstValueFrom(this.api.get<Row[]>('platform/plans')),
+          firstValueFrom(this.api.get<Row[]>('platform/modules')),
+        ]);
+        this.addonModules = this.modules.filter((module) => !module['isCore'] && module['isActive']);
+        if (
+          this.page === 'plans' &&
+          !this.planForm['version'] &&
+          !(this.planForm['includedModules'] as string[]).length
+        ) {
+          this.resetPlanForm();
+        }
+        if (this.page === 'create') {
+          this.groups = (forms['create'] ?? []).map((group) => ({
+            ...group,
+            fields: group.fields.map((field) => ({
+              ...field,
+              options:
+                field.key === 'plan'
+                  ? this.plans.filter((plan) => plan['isActive']).map((plan) => plan['planCode'])
+                  : field.key === 'addOnModules'
+                    ? this.addonModules.map((module) => module['moduleCode'])
+                    : field.options,
+            })),
+          }));
+        }
+        if (this.page === 'platform') {
           this.tenants = await firstValueFrom(
             this.api.get<Row[]>('platform/tenants?page=' + this.pageNumber),
           );
+        }
       } else {
         if (!this.session['admin'] && !(this.page === 'openings' && this.session['accounts']))
           throw Error('You do not have permission to open this screen.');
@@ -96,6 +145,9 @@ export class SetupPage implements OnInit {
                   ? { skip: s.skipInvite }
                   : structuredClone(data ?? {}),
             ];
+      }
+      if (this.page === 'create' && this.model['tenant']?.[0]) {
+        this.model['tenant'][0]['addOnModules'] ??= [];
       }
       if (this.page === 'openings' || this.page === 'numbering') await this.preview();
     } catch (e) {
@@ -193,18 +245,11 @@ export class SetupPage implements OnInit {
         const r = this.model['tenant'][0];
         await firstValueFrom(
           this.api.post('platform/tenants', {
-            ...r,
             requestId: this.requestId,
-            modules: r['modules']
-              .split(',')
-              .map((x: string) => x.trim())
-              .filter(Boolean),
-            limits: {
-              users: r['users'],
-              storage: r['storage'],
-              documents: r['documents'],
-              messages: r['messages'],
-            },
+            name: r['name'],
+            plan: r['plan'],
+            adminEmail: r['adminEmail'],
+            addOnModules: r['addOnModules'] ?? [],
           }),
         );
         await this.router.navigateByUrl('/setup/platform');
@@ -283,17 +328,113 @@ export class SetupPage implements OnInit {
     }
   }
   async lifecycle() {
-    if (!this.selected) return;
+    await this.subscriptionAction('suspend');
+  }
+  async openTenant(tenant: Row) {
+    this.selectedTenant = tenant;
     this.busy = true;
+    this.error = '';
     try {
+      const id = tenant['tenantId'];
+      [this.tenantDetail, this.tenantAudit] = await Promise.all([
+        firstValueFrom(this.api.get<Row>('platform/tenants/' + id)),
+        firstValueFrom(this.api.get<Row[]>('platform/tenants/' + id + '/audit')),
+      ]);
+      const subscription = this.tenantDetail['subscription'];
+      const addons = (this.tenantDetail['entitlements'] ?? [])
+        .filter((entitlement: Row) => entitlement['source'] === 'AddOn' && entitlement['isEnabled'])
+        .map((entitlement: Row) => entitlement['moduleCode']);
+      this.assignment = {
+        planCode: subscription?.planCode ?? '',
+        addOnModules: addons,
+        startsAt: this.toLocalInput(subscription?.startsAt ?? new Date()),
+        endsAt: subscription?.endsAt ? this.toLocalInput(subscription.endsAt) : '',
+        status: subscription?.status === 'Trial' ? 'Trial' : 'Active',
+        version: subscription?.version ?? 0,
+        reason: '',
+      };
+      this.actionEndsAt = this.assignment['endsAt'];
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.busy = false;
+      this.cd.markForCheck();
+    }
+  }
+  usageRows(): { label: string; used: number; limit: number }[] {
+    const usage = this.tenantDetail?.['usage'];
+    if (!usage) return [];
+    return [
+      { label: 'Users', used: usage['users'], limit: usage['quotas']['users'] },
+      { label: 'Storage bytes', used: usage['storageBytes'], limit: usage['quotas']['storageBytes'] },
+      { label: 'Documents this month', used: usage['documents'], limit: usage['quotas']['documents'] },
+      { label: 'Messages this month', used: usage['messages'], limit: usage['quotas']['messages'] },
+      { label: 'API requests this month', used: usage['apiRequests'], limit: usage['quotas']['apiRequests'] },
+    ];
+  }
+  async assignSubscription() {
+    if (!this.selectedTenant) return;
+    this.busy = true;
+    this.error = '';
+    try {
+      const id = this.selectedTenant['tenantId'];
       await firstValueFrom(
-        this.api.post('platform/tenants/' + this.selected['tenantId'] + '/status', {
-          version: this.selected['version'],
-          data: { status: this.status, reason: this.reason },
+        this.api.put('platform/tenants/' + id + '/subscription', {
+          ...this.assignment,
+          startsAt: new Date(this.assignment['startsAt']).toISOString(),
+          endsAt: new Date(this.assignment['endsAt']).toISOString(),
         }),
       );
-      this.selected = null;
-      this.reason = '';
+      this.notice = 'Plan and module entitlements updated.';
+      await this.loadTenantAfterMutation();
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.busy = false;
+      this.cd.markForCheck();
+    }
+  }
+  async subscriptionAction(action: string) {
+    if (!this.selectedTenant) return;
+    this.busy = true;
+    this.error = '';
+    try {
+      const id = this.selectedTenant['tenantId'];
+      const subscription = this.tenantDetail?.['subscription'];
+      await firstValueFrom(
+        this.api.post('platform/tenants/' + id + '/subscription/' + action, {
+          version: subscription?.version ?? 0,
+          reason: this.actionReason,
+          endsAt: this.actionEndsAt ? new Date(this.actionEndsAt).toISOString() : null,
+        }),
+      );
+      this.actionReason = '';
+      this.notice = 'Subscription ' + action + ' applied.';
+      await this.loadTenantAfterMutation();
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.busy = false;
+      this.cd.markForCheck();
+    }
+  }
+  async runSubscriptionAction() {
+    await this.subscriptionAction('renew');
+  }
+  async savePlan() {
+    this.busy = true;
+    this.error = '';
+    try {
+      const isEdit = !!this.planForm['version'];
+      const code = this.planForm['planCode'];
+      const payload = { ...this.planForm };
+      await firstValueFrom(
+        isEdit
+          ? this.api.put('platform/plans/' + code, payload)
+          : this.api.post('platform/plans', payload),
+      );
+      this.notice = isEdit ? 'Plan updated.' : 'Plan created.';
+      this.resetPlanForm();
       await this.load();
     } catch (e) {
       this.fail(e);
@@ -301,6 +442,47 @@ export class SetupPage implements OnInit {
       this.busy = false;
       this.cd.markForCheck();
     }
+  }
+  editPlan(plan: Row) {
+    this.planForm = structuredClone({
+      ...plan,
+      includedModules: plan['includedModules'] ?? [],
+    });
+  }
+  togglePlanModule(moduleCode: string, checked: boolean) {
+    const included = new Set<string>(this.planForm['includedModules'] ?? []);
+    if (checked) included.add(moduleCode);
+    else included.delete(moduleCode);
+    this.planForm['includedModules'] = [...included];
+  }
+  resetPlanForm() {
+    this.planForm = {
+      planCode: '',
+      name: '',
+      description: '',
+      maxUsers: null,
+      maxStorageBytes: null,
+      maxDocumentsPerMonth: null,
+      maxMessagesPerMonth: null,
+      maxApiRequestsPerMonth: null,
+      trialDays: null,
+      gracePeriodDays: 0,
+      priceAmount: null,
+      currency: 'INR',
+      includedModules: this.modules.filter((module) => module['isCore']).map((module) => module['moduleCode']),
+      version: 0,
+    };
+  }
+  private async loadTenantAfterMutation() {
+    if (!this.selectedTenant) return;
+    const selected = this.selectedTenant;
+    await this.load();
+    await this.openTenant(selected);
+  }
+  private toLocalInput(value: string | Date): string {
+    const date = value instanceof Date ? value : new Date(value);
+    const pad = (part: number) => String(part).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
   get ready() {
     return this.state['checks']?.every((c: Row) => c['passed']);

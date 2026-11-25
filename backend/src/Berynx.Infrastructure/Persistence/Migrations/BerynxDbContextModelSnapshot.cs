@@ -1945,6 +1945,168 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                     b.ToTable("onboarding_opening", (string)null);
                 });
 
+            modelBuilder.Entity("Berynx.Domain.Onboarding.PlatformModule", b =>
+                {
+                    b.Property<string>("ModuleCode")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsCore")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.HasKey("ModuleCode");
+
+                    b.ToTable("platform_module", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.PlatformPlan", b =>
+                {
+                    b.Property<string>("PlanCode")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("GracePeriodDays")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("MaxApiRequestsPerMonth")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("MaxDocumentsPerMonth")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("MaxMessagesPerMonth")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("MaxStorageBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("MaxUsers")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<decimal?>("PriceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("TrialDays")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("PlanCode");
+
+                    b.ToTable("platform_plan", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_platform_plan_quotas", "\"MaxUsers\" > 0 AND \"MaxStorageBytes\" > 0 AND \"MaxDocumentsPerMonth\" > 0 AND \"MaxMessagesPerMonth\" > 0 AND \"MaxApiRequestsPerMonth\" > 0 AND \"TrialDays\" > 0 AND \"GracePeriodDays\" >= 0 AND (\"PriceAmount\" IS NULL OR \"PriceAmount\" >= 0)");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.PlatformPlanModule", b =>
+                {
+                    b.Property<string>("PlanCode")
+                        .HasColumnType("character varying(48)");
+
+                    b.Property<string>("ModuleCode")
+                        .HasColumnType("character varying(48)");
+
+                    b.HasKey("PlanCode", "ModuleCode");
+
+                    b.HasIndex("ModuleCode");
+
+                    b.ToTable("platform_plan_module", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.SaaSLicenseAuditEvent", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("ActorEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("ActorIdentityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("After")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Before")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("TenantId", "EventId");
+
+                    b.HasIndex("TenantId", "At");
+
+                    b.ToTable("platform_license_audit", (string)null);
+                });
+
             modelBuilder.Entity("Berynx.Domain.Onboarding.SetupEvent", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -1984,7 +2146,6 @@ namespace Berynx.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Berynx.Domain.Onboarding.Tenant", b =>
                 {
                     b.Property<Guid>("TenantId")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("CancelledAt")
@@ -1993,6 +2154,9 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                     b.Property<string>("Configuration")
                         .IsRequired()
                         .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("CurrentSubscriptionId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("LiveAt")
                         .HasColumnType("timestamp with time zone");
@@ -2015,7 +2179,125 @@ namespace Berynx.Infrastructure.Persistence.Migrations
 
                     b.HasKey("TenantId");
 
+                    b.HasIndex("CurrentSubscriptionId");
+
+                    b.HasIndex("TenantId", "CurrentSubscriptionId");
+
                     b.ToTable("onboarding_tenant", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.TenantApiUsage", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("MonthStart")
+                        .HasColumnType("date");
+
+                    b.Property<long>("RequestCount")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "MonthStart");
+
+                    b.ToTable("platform_tenant_api_usage", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_platform_tenant_api_usage_count", "\"RequestCount\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.TenantModuleEntitlement", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ModuleCode")
+                        .HasColumnType("character varying(48)");
+
+                    b.Property<DateTimeOffset>("EffectiveFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("EffectiveUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.HasKey("TenantId", "ModuleCode");
+
+                    b.HasIndex("ModuleCode");
+
+                    b.HasIndex("TenantId", "IsEnabled", "EffectiveUntil");
+
+                    b.ToTable("platform_tenant_entitlement", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_platform_tenant_entitlement_source", "\"Source\" IN ('Plan', 'AddOn')");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.TenantSubscription", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SubscriptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("EndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("GraceEndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PlanCode")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)");
+
+                    b.Property<long>("PlanVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("TermsSnapshot")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "SubscriptionId");
+
+                    b.HasIndex("PlanCode");
+
+                    b.HasIndex("TenantId", "IsCurrent")
+                        .IsUnique()
+                        .HasFilter("\"IsCurrent\" = TRUE");
+
+                    b.HasIndex("TenantId", "Status", "EndsAt");
+
+                    b.ToTable("platform_tenant_subscription", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_platform_tenant_subscription_grace", "\"GraceEndsAt\" IS NULL OR (\"EndsAt\" IS NOT NULL AND \"GraceEndsAt\" >= \"EndsAt\")");
+
+                            t.HasCheckConstraint("CK_platform_tenant_subscription_status", "\"Status\" IN ('Trial', 'Active', 'Grace', 'Suspended', 'Cancelled')");
+
+                            t.HasCheckConstraint("CK_platform_tenant_subscription_term", "\"EndsAt\" IS NULL OR \"StartsAt\" < \"EndsAt\"");
+                        });
                 });
 
             modelBuilder.Entity("Berynx.Infrastructure.Persistence.M02IdentityUser", b =>
@@ -2535,8 +2817,79 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Berynx.Domain.Onboarding.PlatformPlanModule", b =>
+                {
+                    b.HasOne("Berynx.Domain.Onboarding.PlatformModule", null)
+                        .WithMany()
+                        .HasForeignKey("ModuleCode")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Berynx.Domain.Onboarding.PlatformPlan", null)
+                        .WithMany()
+                        .HasForeignKey("PlanCode")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.SaaSLicenseAuditEvent", b =>
+                {
+                    b.HasOne("Berynx.Domain.Onboarding.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Berynx.Domain.Onboarding.SetupEvent", b =>
                 {
+                    b.HasOne("Berynx.Domain.Onboarding.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.Tenant", b =>
+                {
+                    b.HasOne("Berynx.Domain.Onboarding.TenantSubscription", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CurrentSubscriptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.TenantApiUsage", b =>
+                {
+                    b.HasOne("Berynx.Domain.Onboarding.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.TenantModuleEntitlement", b =>
+                {
+                    b.HasOne("Berynx.Domain.Onboarding.PlatformModule", null)
+                        .WithMany()
+                        .HasForeignKey("ModuleCode")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Berynx.Domain.Onboarding.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Onboarding.TenantSubscription", b =>
+                {
+                    b.HasOne("Berynx.Domain.Onboarding.PlatformPlan", null)
+                        .WithMany()
+                        .HasForeignKey("PlanCode")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Berynx.Domain.Onboarding.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")

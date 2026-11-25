@@ -23,11 +23,18 @@ public sealed class OnboardingStore(BerynxDbContext db, ICurrentTenantContext sc
         var s = Decode(t);
         var rows = await db.Set<OpeningItem>().AsNoTracking().OrderBy(x => x.Ledger).ThenBy(x => x.Id).ToListAsync();
         var difference = rows.Sum(x => x.Debit - x.Credit);
+        var subscription = t.CurrentSubscriptionId is { } subscriptionId
+            ? await db.Set<TenantSubscription>().AsNoTracking()
+                .SingleOrDefaultAsync(x => x.SubscriptionId == subscriptionId)
+            : null;
+        var status = subscription is null
+            ? t.Status
+            : SubscriptionLifecycle.EffectiveStatus(subscription, DateTimeOffset.UtcNow);
         return new
         {
             t.Name,
             t.Plan,
-            t.Status,
+            status,
             t.Version,
             t.LiveAt,
             setup = s,

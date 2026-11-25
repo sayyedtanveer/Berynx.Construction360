@@ -452,7 +452,9 @@ public sealed class M02AuthenticationService(
                   authSession.RevokedAt == null && authSession.ExpiresAt > now &&
                   authSession.LastSeenAt > now.AddMinutes(-IdleMinutes()) &&
                   user.IdentityUserId == identityUserId && user.Status == "Active" &&
-                  (tenant.Status == "Active" || tenant.Status == "Trial")
+                  (tenant.Status == "Active" || tenant.Status == "Trial" || tenant.Status == "Grace" ||
+                   tenant.Status == "Suspended" ||
+                   (tenant.Status == "Cancelled" && tenant.CancelledAt > now.AddDays(-30)))
             select authSession
         ).SingleOrDefaultAsync(ct);
         if (session is null)
@@ -554,12 +556,15 @@ public sealed class M02AuthenticationService(
             await tenantDb.SaveChangesAsync(ct);
         }
 
+        var now = DateTimeOffset.UtcNow;
         return await (
             from user in db.Set<M02User>().IgnoreQueryFilters()
             join tenant in db.Set<Tenant>().IgnoreQueryFilters() on user.TenantId equals tenant.TenantId
             where user.IdentityUserId == identityUserId &&
                   user.Status == "Active" &&
-                  (tenant.Status == "Active" || tenant.Status == "Trial")
+                  (tenant.Status == "Active" || tenant.Status == "Trial" || tenant.Status == "Grace" ||
+                   tenant.Status == "Suspended" ||
+                   (tenant.Status == "Cancelled" && tenant.CancelledAt > now.AddDays(-30)))
             orderby tenant.Name
             select new Membership(user, tenant)
         ).ToListAsync(ct);
@@ -569,8 +574,11 @@ public sealed class M02AuthenticationService(
         CancellationToken ct)
     {
         await using var db = new BerynxDbContext(dbOptions, new TenantScope(tenantId));
-        var tenant = await db.Set<Tenant>().SingleOrDefaultAsync(x =>
-            x.TenantId == tenantId && x.Status != "Suspended" && x.Status != "Cancelled", ct);
+        var tenant = await db.Set<Tenant>().SingleOrDefaultAsync(x => x.TenantId == tenantId, ct);
+        var now = DateTimeOffset.UtcNow;
+        var tenantAvailable = tenant is not null &&
+            (tenant.Status is "Active" or "Trial" or "Grace" or "Suspended" ||
+             tenant.Status == "Cancelled" && tenant.CancelledAt > now.AddDays(-30));
         var membership = await db.Set<M02User>().SingleOrDefaultAsync(x =>
             (x.IdentityUserId == identityUserId ||
              (x.IdentityUserId == null && x.Email != null && x.Email.ToUpper() == normalizedEmail)) &&
@@ -582,7 +590,7 @@ public sealed class M02AuthenticationService(
             membership.Version++;
             await db.SaveChangesAsync(ct);
         }
-        return tenant is null || membership is null ? null : new Membership(membership, tenant);
+        return !tenantAvailable || membership is null ? null : new Membership(membership, tenant!);
     }
 
     private async Task AuditIdentityEvent(Guid identityUserId, string action, object detail, CancellationToken ct)

@@ -14,6 +14,7 @@ Proposed decisions do not equal customer approval. Amend this log during impleme
 | ADR-008 | Tenant identity | Resolve tenant only from a validated JWT `tenant_id` claim | Enforced; locally issued JWTs are accepted only after active membership/session validation |
 | ADR-009 | Schema deployment | Keep EF Core migrations as schema source; deploy reviewed PostgreSQL scripts manually, never migrate at startup | Required for P1-M02 onward |
 | ADR-010 | M01/M02 authentication ownership | ASP.NET Core Identity is the sole local credential and token authority; one account per normalized email, tenant-scoped memberships, provider retained only for email delivery; no mobile/SMS OTP | Approved by product owner; implementation and database verification in progress |
+| ADR-011 | PlatformAdmin bootstrap | Mint the global PlatformAdmin claim only for Identity IDs explicitly listed in server configuration; no tenant-facing role-grant API | Selected for SaaS foundation; operator-managed bootstrap |
 
 ## Gate 0 technical notes
 
@@ -83,7 +84,7 @@ Proposed decisions do not equal customer approval. Amend this log during impleme
 - Passwords use the ASP.NET Core Identity password hasher and configured lockout. JWT access tokens are tenant-scoped and short-lived. Refresh secrets are stored as hashes, rotated transactionally, and revoked on reuse, logout, password reset or session revocation.
 - Password reset and invitation activation links use ASP.NET Core Data Protection. Production must configure a durable, shared, access-controlled key ring. The email provider receives messages only; it must never mint access tokens or authenticate a user.
 - TOTP MFA and Identity recovery codes are local. Mobile/SMS OTP is explicitly excluded from P1-M02.
-- Platform administrator authentication/bootstrap is still open: existing P1-M01 platform routes require a `PlatformAdmin` claim, but the approved tenant authentication model does not yet define how a local Identity account receives that global entitlement or how global platform sessions are represented.
+- PlatformAdmin entitlement is granted only by `PlatformAdmin:IdentityUserIds` server configuration. The account must still authenticate through an active tenant membership; there is no public or tenant-admin role-grant endpoint. Configure the allowlist after securely provisioning the Identity account, then reauthenticate to receive the claim.
 
 ## 2026-11-24 · P1-M03 implementation decisions
 
@@ -94,3 +95,13 @@ Proposed decisions do not equal customer approval. Amend this log during impleme
 | Keep tax and RMC rate records effective-dated and fail closed when an applicable approved rate is missing. Do not compute or rewrite posted-document snapshots in M03. | M03 owns reusable configuration; transaction modules must capture immutable rate/tax snapshots at posting. |
 | Treat `CreditLimit = 0` as a zero credit cap, not as an unlimited credit account. HardBlock and SoftBlock apply their configured block/approval behavior; Warn surfaces a warning. Credit facts are usable only when invoice outstanding, confirmed-undelivered order value, unallocated advances and overdue facts are all explicitly supplied. | The BRD defines a credit limit and exposure formula but does not define zero as unlimited. Fail closed rather than silently granting unlimited credit. A tenant wanting open credit must configure a positive limit. |
 | Return explicit pending/null values for transaction-derived Customer 360 metrics and define M04+ consumer contracts for transaction facts and immutable tax snapshots. | Avoids fabricating balances or implementing later transaction features prematurely. Create-in-context drawers are implemented as reusable M03 components; M04 wires them into quotation/order workflows. |
+
+## 2026-11-25 · SaaS licensing foundation decisions
+
+| Decision | Rationale |
+|---|---|
+| Snapshot plan version, quotas, price/currency, grace terms and selected modules on each tenant subscription. Plan edits do not silently rewrite existing tenant terms; an authorized reassignment creates an audited change. | Preserves commercial history and gives Phase 2 billing a stable integration contract without implementing payment processing. |
+| M01 and M02 are required core modules; M03 is the currently available optional add-on. The catalogue contains only implemented modules, and later modules must be added when their routes/contracts exist. | Prevents licensing nonexistent features or creating unused navigation/API surface. |
+| Meter tenant API requests atomically by UTC calendar month. At quota, tenant API calls receive HTTP 429 with an upgrade contact message; usage visibility and permitted suspended read/export access remain available. | Enforces concurrency-safe usage without blocking recovery/export paths. |
+| A plan change on an existing subscription takes effect immediately; future scheduled plan changes are rejected until the model supports multiple effective subscription terms. | Avoids replacing an active entitlement snapshot before a scheduled effective date. |
+| First PlatformAdmin assignment remains operator-controlled through `PlatformAdmin:IdentityUserIds`; tenant creation and employee invitation never grant this role. | Prevents self-escalation and keeps initial global privilege outside tenant-controlled APIs. |

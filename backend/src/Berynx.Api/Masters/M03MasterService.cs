@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Berynx.Application.IdentityAccess;
 using Berynx.Application.Tenancy;
+using Berynx.Api.Onboarding;
 using Berynx.Domain.IdentityAccess;
 using Berynx.Domain.Masters;
 using Berynx.Domain.Onboarding;
@@ -23,7 +24,7 @@ public sealed record M03ResolvedPrice(
 
 public sealed class M03MasterService(
     BerynxDbContext db,
-    IM02Access access,
+    TenantAuthorizationService authorization,
     ICurrentTenantContext tenant,
     IHttpContextAccessor http)
 {
@@ -31,8 +32,8 @@ public sealed class M03MasterService(
 
     public async Task<M02User> Require(string permission, CancellationToken cancellationToken)
     {
-        await access.Require(permission, cancellationToken);
-        return await access.CurrentUser(cancellationToken);
+        await authorization.Require("M03", permission, cancellationToken);
+        return await authorization.CurrentUser(cancellationToken);
     }
 
     public async Task RequireTenantWide(
@@ -40,7 +41,7 @@ public sealed class M03MasterService(
         string permission,
         CancellationToken cancellationToken)
     {
-        if (!await access.CanAccess(user.UserId, permission, null, null, null, cancellationToken))
+        if (!await authorization.CanAccess("M03", user.UserId, permission, null, null, null, cancellationToken))
             throw new UnauthorizedAccessException("This master action requires tenant-wide scope.");
     }
 
@@ -51,16 +52,16 @@ public sealed class M03MasterService(
         Guid? plantId,
         CancellationToken cancellationToken)
     {
-        if (!await access.CanAccess(user.UserId, permission, branchId, plantId, null, cancellationToken))
+        if (!await authorization.CanAccess("M03", user.UserId, permission, branchId, plantId, null, cancellationToken))
             throw new UnauthorizedAccessException("This record is outside the assigned branch or plant scope.");
     }
 
     public Task<bool> HasPermission(Guid userId, string permission, CancellationToken cancellationToken) =>
-        access.HasPermission(userId, permission, cancellationToken);
+        authorization.HasPermission(userId, permission, cancellationToken);
 
     public Task<bool> HasTenantWidePermission(
         Guid userId, string permission, CancellationToken cancellationToken) =>
-        access.CanAccess(userId, permission, null, null, null, cancellationToken);
+        authorization.CanAccess("M03", userId, permission, null, null, null, cancellationToken);
 
     public void Audit(M02User user, string action, string entityType, Guid entityId, object? before, object? after,
         string? reason = null)
@@ -204,9 +205,9 @@ public sealed class M03MasterService(
         if (line is null)
             throw new KeyNotFoundException("No rate exists for this product in the applicable price list.");
 
-        var user = await access.CurrentUser(cancellationToken);
-        var canViewCost = await access.CanAccess(
-            user.UserId, "global.view_cost", null, null, null, cancellationToken);
+        var user = await authorization.CurrentUser(cancellationToken);
+        var canViewCost = await authorization.CanAccess(
+            "M03", user.UserId, "global.view_cost", null, null, null, cancellationToken);
         return new M03ResolvedPrice(
             selected.List.PriceListId,
             selected.List.Name,

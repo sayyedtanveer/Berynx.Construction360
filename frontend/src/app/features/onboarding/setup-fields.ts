@@ -39,6 +39,7 @@ export const steps = [
 export const titles: Record<string, string> = {
   platform: 'Platform tenants',
   create: 'Create tenant',
+  plans: 'Plans and module catalogue',
   wizard: 'Onboarding',
   company: 'Company profile',
   locations: 'Registrations, branches and plants',
@@ -169,16 +170,12 @@ export const forms: Record<string, Group[]> = {
   create: [
     {
       key: 'tenant',
-      title: 'Tenant and plan',
+      title: 'Tenant, first administrator and licence',
       fields: [
         field('name', 'Tenant name'),
-        field('plan', 'Plan'),
+        choice('plan', 'Base plan', []),
         field('adminEmail', 'First admin email', 'email'),
-        field('modules', 'Enabled module codes (comma-separated)'),
-        field('users', 'User limit', 'number'),
-        field('storage', 'Storage limit (bytes)', 'number'),
-        field('documents', 'Monthly document limit', 'number'),
-        field('messages', 'Message limit', 'number'),
+        { key: 'addOnModules', label: 'Optional module add-ons', type: 'multi-select', options: [], required: false },
       ],
     },
   ],

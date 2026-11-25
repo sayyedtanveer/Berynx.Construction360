@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using Berynx.Api.Onboarding;
 using Berynx.Application.IdentityAccess;
 using Berynx.Application.Tenancy;
 using Berynx.Domain.IdentityAccess;
@@ -155,6 +156,17 @@ public static class M02Endpoints
 
         var api = app.MapGroup("/api/v1/m02")
             .RequireAuthorization(p => p.RequireClaim("sub").RequireClaim("tenant_id"));
+        api.AddEndpointFilter(async (context, next) =>
+        {
+            var authorization = context.HttpContext.RequestServices.GetRequiredService<TenantAuthorizationService>();
+            var path = context.HttpContext.Request.Path.Value;
+            await authorization.RequireModule(
+                "M02",
+                !HttpMethods.IsGet(context.HttpContext.Request.Method),
+                path == "/api/v1/onboarding/export",
+                context.HttpContext.RequestAborted);
+            return await next(context);
+        });
 
         api.MapGet("/users", async (IM02Access access, BerynxDbContext db, CancellationToken ct) =>
         {
@@ -224,7 +236,7 @@ public static class M02Endpoints
 
         api.MapPost("/users", async (InviteRequest request, IM02Access access, BerynxDbContext db,
             UserManager<M02IdentityUser> identityUsers,
-            ICurrentTenantContext tenant, CancellationToken ct) =>
+            ICurrentTenantContext tenant, TenantEntitlementService entitlements, CancellationToken ct) =>
         {
             var current = await RequireTenantWide(access, "users.create", ct);
             if (request.Roles is null || request.Roles.Length == 0)
@@ -239,6 +251,10 @@ public static class M02Endpoints
                 throw new System.ComponentModel.DataAnnotations.ValidationException("Enter a name up to 150 characters.");
             var grants = await ResolveGrants(db, request.Roles, tenant.TenantId, ct);
             await EnsureCanAssignRoles(db, access, current.UserId, grants, ct);
+            if (await db.Set<M02User>().AnyAsync(x => x.Email == email, ct))
+                throw new System.ComponentModel.DataAnnotations.ValidationException(
+                    "This account already has a membership in this tenant. Manage the existing user instead.");
+            await entitlements.EnsureInviteCapacity(ct);
             var identity = await identityUsers.FindByEmailAsync(email);
             if (identity is null)
             {

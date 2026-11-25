@@ -74,8 +74,11 @@ builder.Services.AddScoped<IM03CreditFactsProvider, M03UnavailableCreditFactsPro
 builder.Services.AddScoped<IM03CreditProfileProvider, M03CreditProfileProvider>();
 builder.Services.AddScoped<M03CreditEvaluationService>();
 builder.Services.AddScoped<OnboardingStore>();
+builder.Services.AddScoped<TenantEntitlementService>();
+builder.Services.AddScoped<TenantAuthorizationService>();
 builder.Services.AddScoped<IBranchAccess, ClaimBranchAccess>();
-builder.Services.AddScoped<IM02Access, M02AccessService>();
+builder.Services.AddScoped<IM02Access>(services =>
+    new M02AccessService(services.GetRequiredService<TenantAuthorizationService>()));
 builder.Services.AddScoped<IM02InvitationDeliveryProvider, ConfiguredM02InvitationDeliveryProvider>();
 builder.Services.AddScoped<IM02ApprovalEngine, M02ApprovalEngine>();
 builder.Services.AddScoped<IM02TaskReassignmentProvider, M02ApprovalTaskReassignmentProvider>();
@@ -180,6 +183,7 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 app.MapOnboarding();
+app.MapPlatformSaaS();
 app.MapM02();
 app.MapM03();
 

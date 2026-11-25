@@ -2,6 +2,7 @@
   <nav aria-label="Workspace">
     @if (session['platform']) {
       <a routerLink="/setup/platform">Platform tenants</a>
+      <a routerLink="/setup/plans">Plans and modules</a>
     }
     @if (session['admin']) {
       <a routerLink="/setup/wizard">Onboarding</a><a routerLink="/setup/usage">Plan and usage</a>
@@ -41,12 +42,11 @@
               Export available until {{ t['exportUntil'] | date: 'medium' : '+0530' }} IST. Data is
               retained for disposition review.
             </p>
-          } @else {
-            <button (click)="selected = t; status = t['status']">Change status</button>
           }
+          <button type="button" (click)="openTenant(t)">View licence, usage and audit</button>
         </section>
       } @empty {
-        <p>Create the first tenant to start onboarding.</p>
+        <p>No tenants yet. Create a plan, then create the first tenant.</p>
       }
       <button [disabled]="pageNumber === 1" (click)="pageNumber = pageNumber - 1; load()">
         Previous
@@ -54,21 +54,122 @@
       <button [disabled]="tenants.length < 50" (click)="pageNumber = pageNumber + 1; load()">
         Next
       </button>
-      @if (selected) {
-        <form (ngSubmit)="lifecycle()">
-          <fieldset>
-            <legend>{{ selected['name'] }}</legend>
-            <label
-              >Status<select name="status" [(ngModel)]="status">
-                @for (x of ['Trial', 'Active', 'Suspended', 'Cancelled']; track x) {
-                  <option>{{ x }}</option>
-                }
-              </select></label
-            ><label>Reason<input name="reason" required [(ngModel)]="reason" /></label>
-          </fieldset>
-          <button [disabled]="busy || !reason.trim()">Apply status</button>
-        </form>
+      @if (tenantDetail) {
+        <section aria-labelledby="tenant-detail-heading">
+          <h2 id="tenant-detail-heading">{{ tenantDetail['name'] }} licence</h2>
+          <p>{{ tenantDetail['plan'] }} · {{ tenantDetail['status'] }}</p>
+          <h3>Usage and quotas</h3>
+          <dl>
+            @for (metric of usageRows(); track metric.label) {
+              <div><dt>{{ metric.label }}</dt><dd>{{ metric.used }} / {{ metric.limit }}</dd></div>
+            }
+          </dl>
+          <h3>Current module entitlements</h3>
+          <ul>
+            @for (entitlement of tenantDetail['entitlements']; track entitlement['moduleCode']) {
+              <li>{{ entitlement['moduleCode'] }} · {{ entitlement['source'] }} · {{ entitlement['isEnabled'] ? 'Enabled' : 'Disabled' }}</li>
+            }
+          </ul>
+          <form (ngSubmit)="assignSubscription()">
+            <fieldset [disabled]="busy">
+              <legend>Assign or change base plan and add-ons</legend>
+              <label>Base plan
+                <select name="planCode" required [(ngModel)]="assignment['planCode']">
+                  <option value="">Select a plan…</option>
+                  @for (plan of plans; track plan['planCode']) {
+                    <option [value]="plan['planCode']">{{ plan['name'] }}</option>
+                  }
+                </select>
+              </label>
+              <label>Optional add-ons
+                <select name="addOnModules" multiple [(ngModel)]="assignment['addOnModules']">
+                  @for (module of addonModules; track module['moduleCode']) {
+                    <option [value]="module['moduleCode']">{{ module['name'] }}</option>
+                  }
+                </select>
+              </label>
+              <label>Effective from<input type="datetime-local" name="startsAt" required [(ngModel)]="assignment['startsAt']" /></label>
+              <label>Term ends<input type="datetime-local" name="endsAt" required [(ngModel)]="assignment['endsAt']" /></label>
+              <label>Status
+                <select name="subscriptionStatus" [(ngModel)]="assignment['status']">
+                  <option>Trial</option><option>Active</option>
+                </select>
+              </label>
+              <label>Reason<input name="assignmentReason" required [(ngModel)]="assignment['reason']" /></label>
+            </fieldset>
+            <button [disabled]="busy || !assignment['reason']?.trim() || !assignment['planCode']">Save plan and entitlements</button>
+          </form>
+          <form (ngSubmit)="runSubscriptionAction()">
+            <fieldset [disabled]="busy">
+              <legend>Manual activation, renewal and lifecycle</legend>
+              <label>New term end<input type="datetime-local" name="actionEnd" [(ngModel)]="actionEndsAt" /></label>
+              <label>Reason<input name="actionReason" required [(ngModel)]="actionReason" /></label>
+            </fieldset>
+            <div class="actions">
+              <button type="button" [disabled]="busy || !actionReason.trim()" (click)="subscriptionAction('activate')">Activate</button>
+              <button type="button" [disabled]="busy || !actionReason.trim() || !actionEndsAt" (click)="subscriptionAction('renew')">Renew</button>
+              <button type="button" [disabled]="busy || !actionReason.trim()" (click)="subscriptionAction('suspend')">Suspend</button>
+              <button type="button" [disabled]="busy || !actionReason.trim() || !actionEndsAt" (click)="subscriptionAction('reactivate')">Reactivate</button>
+              <button type="button" [disabled]="busy || !actionReason.trim()" (click)="subscriptionAction('cancel')">Cancel</button>
+            </div>
+          </form>
+          <h3>Licence change history</h3>
+          <ol>
+            @for (event of tenantAudit; track event['eventId']) {
+              <li>{{ event['at'] | date:'medium' : '+0530' }} · {{ event['action'] }} · {{ event['actorEmail'] }} · {{ event['reason'] }}</li>
+            }
+          </ol>
+        </section>
       }
+    }
+    @if (page === 'plans') {
+      <section>
+        <h2>{{ planForm['planCode'] ? 'Edit plan' : 'Create plan' }}</h2>
+        <form (ngSubmit)="savePlan()">
+          <fieldset [disabled]="busy">
+            <label>Plan code<input name="planCode" required maxlength="48" [(ngModel)]="planForm['planCode']" [disabled]="!!planForm['version']" /></label>
+            <label>Name<input name="planName" required maxlength="120" [(ngModel)]="planForm['name']" /></label>
+            <label>Description<input name="planDescription" maxlength="1000" [(ngModel)]="planForm['description']" /></label>
+            <label>Maximum users<input name="maxUsers" type="number" min="1" required [(ngModel)]="planForm['maxUsers']" /></label>
+            <label>Storage quota (bytes)<input name="maxStorage" type="number" min="1" required [(ngModel)]="planForm['maxStorageBytes']" /></label>
+            <label>Documents per month<input name="maxDocuments" type="number" min="1" required [(ngModel)]="planForm['maxDocumentsPerMonth']" /></label>
+            <label>Messages per month<input name="maxMessages" type="number" min="1" required [(ngModel)]="planForm['maxMessagesPerMonth']" /></label>
+            <label>API requests per month<input name="maxApiRequests" type="number" min="1" required [(ngModel)]="planForm['maxApiRequestsPerMonth']" /></label>
+            <label>Trial days<input name="trialDays" type="number" min="1" required [(ngModel)]="planForm['trialDays']" /></label>
+            <label>Grace period days<input name="graceDays" type="number" min="0" required [(ngModel)]="planForm['gracePeriodDays']" /></label>
+            <label>Optional INR price<input name="price" type="number" min="0" step="0.01" [(ngModel)]="planForm['priceAmount']" /></label>
+          </fieldset>
+          <fieldset [disabled]="busy">
+            <legend>Included modules (core modules are required)</legend>
+            @for (module of modules; track module['moduleCode']) {
+              <label class="check-row">
+                <input type="checkbox" [checked]="planForm['includedModules'].includes(module['moduleCode'])"
+                  [disabled]="module['isCore']"
+                  (change)="togglePlanModule(module['moduleCode'], $any($event.target).checked)" />
+                {{ module['name'] }}{{ module['isCore'] ? ' · Required' : '' }}
+              </label>
+            }
+          </fieldset>
+          <button [disabled]="busy">Save plan</button>
+          <button type="button" [disabled]="busy" (click)="resetPlanForm()">Clear</button>
+        </form>
+      </section>
+      @for (plan of plans; track plan['planCode']) {
+        <section>
+          <h2>{{ plan['name'] }} <small>({{ plan['planCode'] }})</small></h2>
+          <p>{{ plan['maxUsers'] }} users · {{ plan['maxDocumentsPerMonth'] }} documents/month · {{ plan['maxMessagesPerMonth'] }} messages/month · {{ plan['maxApiRequestsPerMonth'] }} API requests/month · {{ plan['trialDays'] }} trial days · {{ plan['gracePeriodDays'] }} grace days</p>
+          <p>Modules: {{ plan['includedModules'].join(', ') }}</p>
+          <button type="button" (click)="editPlan(plan)">Edit plan</button>
+        </section>
+      } @empty {
+        <p>No plans are configured. Create a plan before provisioning a tenant.</p>
+      }
+      <h2>Module catalogue</h2>
+      <ul>
+        @for (module of modules; track module['moduleCode']) {
+          <li>{{ module['moduleCode'] }} · {{ module['name'] }}{{ module['isCore'] ? ' · Core' : ' · Add-on' }}</li>
+        }
+      </ul>
     }
     @if (session['admin'] && (page === 'home' || page === 'wizard')) {
       <a href="/api/v1/onboarding/export">Export tenant data</a>
@@ -90,7 +191,7 @@
           <h2>{{ m.name }}</h2>
           {{ m.used }} of {{ m.limit }}
           @if (m.blocked) {
-            <p>Limit reached. Upgrade your plan.</p>
+            <p>Limit reached. Ask your Platform Admin to review or upgrade this plan.</p>
           } @else if (m.warning) {
             <p>At least 80% of your allowance is in use.</p>
           }
@@ -158,6 +259,7 @@
                       <select
                         [name]="g.key + i + f.key"
                         [(ngModel)]="row[f.key]"
+                        [multiple]="f.type === 'multi-select'"
                         (ngModelChange)="changed()"
                         [required]="!!f.required"
                       >

@@ -9,6 +9,7 @@ interface NavItem {
   path?: string;
   children?: NavItem[];
   permission?: string;
+  module?: string;
 }
 
 interface NavGroup {
@@ -66,7 +67,7 @@ interface NavGroup {
                 
                 @if (expandedGroups.has(item.label) && !collapsed()) {
                   <div class="nav-children">
-                    @for (child of item.children; track child.label) {
+                    @for (child of visibleChildren(item); track child.label) {
                       <a
                         [routerLink]="child.path"
                         routerLinkActive="nav-link-active"
@@ -341,6 +342,7 @@ interface NavGroup {
 export class SidebarComponent implements OnInit {
   private readonly api = inject(ApiClient);
   private readonly allowedPermissions = signal<ReadonlySet<string> | null>(null);
+  private readonly enabledModules = signal<ReadonlySet<string> | null>(null);
   
   collapsed = signal(false);
   expandedGroups = new Set<string>(['Sell', 'Masters']);
@@ -353,20 +355,27 @@ export class SidebarComponent implements OnInit {
       ],
     },
     {
+      label: 'Platform',
+      items: [
+        { label: 'Tenants', icon: '🏢', path: '/setup/platform', module: 'PLATFORM' },
+        { label: 'Plans & modules', icon: '⚙️', path: '/setup/plans', module: 'PLATFORM' },
+      ],
+    },
+    {
       label: 'Organization',
       items: [
-        { label: 'Company Setup', icon: '🏢', path: '/setup/home' },
-        { label: 'Branches & Plants', icon: '🏭', path: '/setup/branches' },
+        { label: 'Company Setup', icon: '🏢', path: '/setup/home', module: 'M01' },
+        { label: 'Branches & Plants', icon: '🏭', path: '/setup/branches', module: 'M01' },
       ],
     },
     {
       label: 'Access Control',
       items: [
-        { label: 'Users', icon: '👥', path: '/m02/users', permission: 'users.view' },
-        { label: 'Roles & Permissions', icon: '🔐', path: '/m02/roles', permission: 'roles.view' },
-        { label: 'Approval Rules', icon: '✓', path: '/m02/approval-rules', permission: 'approvals.view' },
-        { label: 'My Approvals', icon: '📋', path: '/m02/approvals', permission: 'approvals.view' },
-        { label: 'Audit Log', icon: '📝', path: '/m02/audit', permission: 'audit.view' },
+        { label: 'Users', icon: '👥', path: '/m02/users', permission: 'users.view', module: 'M02' },
+        { label: 'Roles & Permissions', icon: '🔐', path: '/m02/roles', permission: 'roles.view', module: 'M02' },
+        { label: 'Approval Rules', icon: '✓', path: '/m02/approval-rules', permission: 'approvals.view', module: 'M02' },
+        { label: 'My Approvals', icon: '📋', path: '/m02/approvals', permission: 'approvals.view', module: 'M02' },
+        { label: 'Audit Log', icon: '📝', path: '/m02/audit', permission: 'audit.view', module: 'M02' },
       ],
     },
     {
@@ -375,6 +384,8 @@ export class SidebarComponent implements OnInit {
         {
           label: 'Customers',
           icon: '🏗️',
+          module: 'M03',
+          permission: 'masters.view',
           children: [
             { label: 'All Customers', path: '/m03/customers' },
             { label: 'Customer Sites', path: '/m03/sites' },
@@ -384,16 +395,20 @@ export class SidebarComponent implements OnInit {
         {
           label: 'Suppliers',
           icon: '🚚',
+          module: 'M03',
+          permission: 'masters.view',
           children: [
             { label: 'All Suppliers', path: '/m03/suppliers' },
             { label: 'Supplier Plants', path: '/m03/plants' },
             { label: 'Supplier Banks', path: '/m03/supplier-bank-accounts' },
           ],
         },
-        { label: 'Products', icon: '📦', path: '/m03/products' },
+        { label: 'Products', icon: '📦', path: '/m03/products', module: 'M03', permission: 'masters.view' },
         {
           label: 'Pricing',
           icon: '💰',
+          module: 'M03',
+          permission: 'masters.view',
           children: [
             { label: 'Price Lists', path: '/m03/price-lists' },
             { label: 'Price Lines', path: '/m03/price-lines' },
@@ -403,6 +418,8 @@ export class SidebarComponent implements OnInit {
         {
           label: 'Fleet',
           icon: '🚛',
+          module: 'M03',
+          permission: 'masters.view',
           children: [
             { label: 'Vehicles & Mixers', path: '/m03/vehicles' },
             { label: 'Drivers', path: '/m03/drivers' },
@@ -413,6 +430,8 @@ export class SidebarComponent implements OnInit {
         {
           label: 'Configuration',
           icon: '⚙️',
+          module: 'M03',
+          permission: 'masters.view',
           children: [
             { label: 'Tax & HSN', path: '/m03/tax' },
             { label: 'Category Tax Overrides', path: '/m03/category-tax-overrides' },
@@ -427,23 +446,41 @@ export class SidebarComponent implements OnInit {
     {
       label: 'Account',
       items: [
-        { label: 'Profile & Sessions', icon: '👤', path: '/m02/profile' },
-        { label: 'MFA Setup', icon: '🔒', path: '/m02/mfa' },
+        { label: 'Profile & Sessions', icon: '👤', path: '/m02/profile', module: 'M02' },
+        { label: 'MFA Setup', icon: '🔒', path: '/m02/mfa', module: 'M02' },
       ],
     },
   ];
 
   ngOnInit(): void {
-    this.api.get<{ permissions: string[] }>('m02/context').subscribe({
-      next: (context) => { this.allowedPermissions.set(new Set(context.permissions)); },
-      error: () => { this.allowedPermissions.set(new Set()); },
+    this.api.get<{ permissions: string[]; modules: string[] }>('auth/navigation').subscribe({
+      next: (navigation) => {
+        this.allowedPermissions.set(new Set(navigation.permissions));
+        this.enabledModules.set(new Set(navigation.modules));
+      },
+      error: () => {
+        this.allowedPermissions.set(new Set());
+        this.enabledModules.set(new Set());
+      },
     });
   }
 
   visibleItems(group: NavGroup): NavItem[] {
-    const permissions = this.allowedPermissions();
     return group.items.filter((item) =>
-      !item.permission || permissions?.has(item.permission) === true);
+      this.isVisible(item) && (!item.children || this.visibleChildren(item).length > 0));
+  }
+
+  visibleChildren(parent: NavItem): NavItem[] {
+    return (parent.children ?? []).filter((child) => this.isVisible(child, parent));
+  }
+
+  private isVisible(item: NavItem, parent?: NavItem): boolean {
+    const permission = item.permission ?? parent?.permission;
+    const module = item.module ?? parent?.module;
+    const permissions = this.allowedPermissions();
+    const modules = this.enabledModules();
+    return (!permission || permissions?.has(permission) === true) &&
+      (!module || modules?.has(module) === true);
   }
 
   toggleSidebar(): void {
