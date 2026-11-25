@@ -9,4 +9,7 @@
     <Project Path="tests/Berynx.UnitTests/Berynx.UnitTests.csproj" />
     <Project Path="tests/Berynx.IntegrationTests/Berynx.IntegrationTests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Berynx.DevAuthProvisioner/Berynx.DevAuthProvisioner.csproj" />
+  </Folder>
 </Solution>

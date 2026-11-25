@@ -1,0 +1,434 @@
+<main class="m02-page" [attr.data-screen]="screen">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Settings · users and access</p>
+      <h1>{{ screenTitles[screen] }}</h1>
+    </div>
+    <a class="text-link" routerLink="/m02/profile">Profile and sessions</a>
+  </header>
+
+  @if (error) {
+    <p class="notice error" role="alert">{{ error }}</p>
+  }
+  @if (notice) {
+    <p class="notice success" role="status">{{ notice }}</p>
+  }
+  @if (loading) {
+    <p class="loading" role="status" aria-live="polite">Working…</p>
+  }
+
+  @switch (screen) {
+    @case ('mfa') {
+      <section class="panel narrow-panel">
+        <h2>Authenticator app</h2>
+        <p>Set up time-based one-time passwords with your configured identity provider.</p>
+        @if (!mfaSetup) {
+          <button type="button" class="primary" [disabled]="loading" (click)="beginMfa()">Start MFA setup</button>
+        } @else {
+          <label for="provisioning-uri">Provisioning URI</label>
+          <textarea id="provisioning-uri" rows="3" readonly [value]="mfaSetup.provisioningUri"></textarea>
+          @if (mfaSetup.manualKey) {
+            <label for="manual-key">Manual setup key</label>
+            <input id="manual-key" readonly [value]="mfaSetup.manualKey" />
+          }
+          <form (ngSubmit)="confirmMfa()">
+            <label for="mfa-code">Six-digit authenticator code</label>
+            <input id="mfa-code" name="mfaCode" [(ngModel)]="mfaCode" inputmode="numeric"
+              autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
+            <button type="submit" class="primary" [disabled]="loading">Verify and enable</button>
+          </form>
+          @if (recoveryCodes.length) {
+            <section aria-labelledby="recovery-codes-title">
+              <h3 id="recovery-codes-title">Recovery codes</h3>
+              <p>Store these one-time codes somewhere private. Each code works once.</p>
+              <ul>@for (code of recoveryCodes; track code) { <li><code>{{ code }}</code></li> }</ul>
+            </section>
+          }
+        }
+      </section>
+    }
+
+    @case ('users') {
+      @if ((editingUser && can('users.edit')) || (!editingUser && can('users.create'))) {
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <h2>{{ editingUser ? 'Update role assignments' : 'Invite a user' }}</h2>
+            <p>Email is required for local password activation; mobile is optional. Invitation links expire after 72 hours.</p>
+            @if (!editingUser) {
+              <p class="muted">A new account remains invited until the recipient accepts the secure link. Email is required for local password activation; mobile is optional.</p>
+            }
+          </div>
+          @if (editingUser) {
+            <button type="button" (click)="editingUser = null; roleAssignments = []">Cancel edit</button>
+          }
+        </div>
+        <form class="user-form" (ngSubmit)="inviteUser()">
+          @if (!editingUser) {
+            <label>
+              Full name
+              <input name="displayName" [(ngModel)]="userForm.displayName" maxlength="150" required />
+            </label>
+            <label>
+              Email (required)
+              <input name="email" [(ngModel)]="userForm.email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              Mobile (international format)
+              <input name="mobile" [(ngModel)]="userForm.mobile" type="tel" autocomplete="tel"
+                placeholder="+919876543210" />
+            </label>
+          } @else {
+            <p class="muted">Editing role and data-scope assignments for {{ editingUser.displayName }}.</p>
+          }
+          <fieldset class="scope-list">
+            <legend>Role and data scope</legend>
+            @for (assignment of roleAssignments; track $index) {
+              <div class="scope-row">
+                <label>
+                  Role
+                  <select [name]="'role-' + $index" [(ngModel)]="assignment.roleKey" required>
+                    @for (role of roles; track role.roleId) {
+                      <option [value]="role.roleKey">{{ role.name }}</option>
+                    }
+                  </select>
+                </label>
+                <label>
+                  Scope
+                  <select [name]="'scope-' + $index" [(ngModel)]="assignment.scopeType"
+                    (ngModelChange)="changeScope(assignment, $event)">
+                    <option value="All">All records</option>
+                    <option value="Branch">Branch</option>
+                    <option value="Plant">Plant</option>
+                    <option value="Own">Own records</option>
+                  </select>
+                </label>
+                @if (assignment.scopeType === 'Branch' || assignment.scopeType === 'Plant') {
+                  <label>
+                    {{ assignment.scopeType }}
+                    <select [name]="'scope-id-' + $index" [(ngModel)]="assignment.scopeId" required>
+                      <option value="" disabled>Select a scope</option>
+                      @if (assignment.scopeType === 'Branch') {
+                        @for (branch of branches; track branch.id) {
+                          <option [value]="branch.id">{{ branch.name }}</option>
+                        }
+                      } @else {
+                        @for (plant of plants; track plant.id) {
+                          <option [value]="plant.id">{{ plant.name }}</option>
+                        }
+                      }
+                    </select>
+                  </label>
+                }
+                <button type="button" class="subtle" [disabled]="roleAssignments.length < 2"
+                  (click)="removeRoleAssignment($index)" [attr.aria-label]="'Remove role ' + ($index + 1)">Remove</button>
+              </div>
+            }
+            <button type="button" class="subtle" (click)="addRoleAssignment()">Add another role</button>
+          </fieldset>
+          <button type="submit" class="primary" [disabled]="loading">
+            {{ editingUser ? 'Save role assignments' : 'Send invitation' }}
+          </button>
+        </form>
+      </section>
+      } @else {
+        <section class="panel">
+          <h2>Users access</h2>
+          <p role="status">Your account does not have permission to add or edit tenant users.</p>
+        </section>
+      }
+
+      <section class="panel">
+        <div class="section-heading">
+          <div><h2>Tenant users</h2><p>Role changes are enforced by the API on the next request.</p></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Identity</th><th>Status</th><th>Invitation expiry</th><th>Roles and scope</th><th>Actions</th></tr></thead>
+            <tbody>
+              @for (user of users; track user.userId) {
+                <tr>
+                  <td>{{ user.displayName }}</td>
+                  <td>{{ user.email || user.mobile }}</td>
+                  <td><span class="status">{{ user.status }}</span></td>
+                  <td>
+                    @if (user.status === 'Invited' && user.inviteExpiresAt) {
+                      {{ user.inviteExpiresAt | date:'medium' }}
+                    } @else {
+                      —
+                    }
+                  </td>
+                  <td>{{ roleSummary(user) }}</td>
+                  <td class="actions">
+                    @if (can('users.edit')) {
+                      <button type="button" (click)="editUser(user)">Edit roles</button>
+                    }
+                    @if (user.status === 'Invited') {
+                      @if (can('users.edit')) {
+                        <button type="button" (click)="resendInvite(user)">Resend</button>
+                      }
+                      @if (can('users.cancel')) {
+                        <button type="button" (click)="revokeInvite(user)">Revoke</button>
+                      }
+                    }
+                    @if (user.status === 'Active' && can('users.edit')) {
+                      <button type="button" (click)="beginDeactivation(user)">Deactivate</button>
+                    }
+                    @if (user.status === 'Inactive' && can('users.edit')) {
+                      <button type="button" (click)="activateUser(user)">Activate</button>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="empty">No users found.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      @if (deactivatingUser) {
+        <section class="panel reassignment" aria-labelledby="reassign-title">
+          <h2 id="reassign-title">Reassign tasks before deactivating {{ deactivatingUser.displayName }}</h2>
+          @if (openTasks.length === 0) {
+            <p>No open tasks were returned by the active business-module providers.</p>
+          } @else {
+            @for (task of openTasks; track task.provider + task.taskId) {
+              <label class="task-row">
+                <span>{{ task.summary }} <small>{{ task.provider }}</small></span>
+                <select [value]="taskOwners.get(task.provider + '|' + task.taskId) || ''"
+                  (change)="setTaskOwner(task, $any($event.target).value)" required>
+                  <option value="" disabled>Select an active owner</option>
+                  @for (user of users; track user.userId) {
+                    @if (user.status === 'Active' && user.userId !== deactivatingUser.userId) {
+                      <option [value]="user.userId">{{ user.displayName }}</option>
+                    }
+                  }
+                </select>
+              </label>
+            }
+          }
+          <div class="button-row">
+            <button type="button" class="primary" [disabled]="loading" (click)="confirmDeactivation()">Reassign and deactivate</button>
+            <button type="button" (click)="deactivatingUser = null">Cancel</button>
+          </div>
+        </section>
+      }
+    }
+
+    @case ('roles') {
+      <div class="role-layout">
+        <section class="panel role-list">
+          <div class="section-heading">
+            <h2>Roles</h2>
+            <button type="button" (click)="startNewRole()">New role</button>
+          </div>
+          @for (role of roles; track role.roleId) {
+            <div class="role-row" [class.selected]="selectedRole?.roleId === role.roleId">
+              <button type="button" class="role-select" (click)="selectRole(role)">
+                <strong>{{ role.name }}</strong>
+                <span>{{ role.isSystem ? 'System role' : 'Custom role' }}</span>
+              </button>
+              <button type="button" class="subtle" (click)="cloneRole(role)">Clone</button>
+              @if (!role.isSystem) {
+                <button type="button" class="subtle danger-text" (click)="deleteRole(role)">Delete</button>
+              }
+            </div>
+          }
+        </section>
+
+        <section class="panel permission-panel">
+          <h2>{{ selectedRole ? 'Permission matrix' : 'Create custom role' }}</h2>
+          <label>Role name<input name="roleName" [(ngModel)]="roleForm.name" maxlength="100" required /></label>
+          <label>Description<textarea name="roleDescription" [(ngModel)]="roleForm.description" rows="2" maxlength="500"></textarea></label>
+          @if (selectedRole?.isSystem) {
+            <p class="notice info">System roles are immutable. Clone this role to customize it.</p>
+          }
+          <div class="permission-grid">
+            @for (module of permissionModules; track module) {
+              <fieldset>
+                <legend>{{ module }}</legend>
+                @for (permission of permissionsFor(module); track permission.permissionCode) {
+                  <label class="permission-item">
+                    <input type="checkbox" [checked]="selectedPermissions.has(permission.permissionCode)"
+                      [disabled]="selectedRole?.isSystem"
+                      (change)="togglePermission(permission.permissionCode, $any($event.target).checked)" />
+                    <span>{{ permission.action }}</span>
+                  </label>
+                }
+              </fieldset>
+            }
+          </div>
+          @if (!selectedRole?.isSystem) {
+            <button type="button" class="primary" [disabled]="loading" (click)="saveRole()">Save role</button>
+          }
+        </section>
+      </div>
+    }
+
+    @case ('approval-rules') {
+      <div class="rule-layout">
+        <section class="panel rule-list">
+          <div class="section-heading"><h2>Configured rules</h2><button type="button" (click)="newRule()">New rule</button></div>
+          @for (rule of rules; track rule.ruleId) {
+            <button type="button" class="rule-item" (click)="selectRule(rule)">
+              <strong>{{ rule.name }}</strong><span>{{ rule.entityType }} · {{ rule.enabled ? 'Enabled' : 'Disabled' }}</span>
+            </button>
+          } @empty { <p class="empty">No approval rules configured.</p> }
+        </section>
+        <section class="panel">
+          <h2>{{ selectedRule ? 'Edit rule' : 'Create rule' }}</h2>
+          <form class="rule-form" (ngSubmit)="saveRule()">
+            <label>Rule name<input name="ruleName" [(ngModel)]="ruleForm.name" maxlength="120" required /></label>
+            <label>Entity type<input name="entityType" [(ngModel)]="ruleForm.entityType" maxlength="80" required
+              placeholder="SalesOrder" /></label>
+            <fieldset><legend>Match conditions (all entered conditions must match)</legend>
+              <label>Amount greater than<input name="amount" type="number" min="0" step="0.01"
+                [(ngModel)]="ruleForm.amountGreaterThan" /></label>
+              <label>Discount percentage greater than<input name="discount" type="number" min="0" max="100" step="0.01"
+                [(ngModel)]="ruleForm.discountPercentGreaterThan" /></label>
+              <label>Margin percentage below<input name="margin" type="number" min="0" max="100" step="0.01"
+                [(ngModel)]="ruleForm.marginPercentBelow" /></label>
+              <label>Credit status<input name="creditStatus" [(ngModel)]="ruleForm.creditStatus" maxlength="50" /></label>
+            </fieldset>
+            <label class="check-line"><input name="enabled" type="checkbox" [(ngModel)]="ruleForm.enabled" /> Enabled</label>
+            <fieldset><legend>Approval levels</legend>
+              @for (level of ruleLevels; track level.level) {
+                <div class="level-row">
+                  <strong>Level {{ level.level }}</strong>
+                  <label>Approver role
+                    <select [name]="'approver-' + level.level" [(ngModel)]="level.approverRoleId" required>
+                      @for (role of roles; track role.roleId) { <option [value]="role.roleId">{{ role.name }}</option> }
+                    </select>
+                  </label>
+                  <label>SLA minutes<input [name]="'sla-' + level.level" type="number" min="1"
+                    [(ngModel)]="level.slaMinutes" required /></label>
+                  <label>Escalation role (optional)
+                    <select [name]="'escalation-' + level.level" [(ngModel)]="level.escalationRoleId">
+                      <option [ngValue]="null">No separate escalation role</option>
+                      @for (role of roles; track role.roleId) { <option [value]="role.roleId">{{ role.name }}</option> }
+                    </select>
+                  </label>
+                  <button type="button" class="subtle" [disabled]="ruleLevels.length === 1"
+                    (click)="removeApprovalLevel($index)">Remove level</button>
+                </div>
+              }
+              <button type="button" class="subtle" (click)="addApprovalLevel()">Add level</button>
+            </fieldset>
+            <div class="button-row">
+              <button type="submit" class="primary" [disabled]="loading">Save rule</button>
+              @if (selectedRule; as rule) {
+                @if (rule.enabled) { <button type="button" (click)="disableRule(rule)">Disable rule</button> }
+              }
+            </div>
+          </form>
+        </section>
+      </div>
+    }
+
+    @case ('approvals') {
+      <section class="panel">
+        <h2>Approval inbox</h2>
+        <p>Requests are ordered by SLA due time. Self-approval is blocked by the server.</p>
+        @for (request of approvals; track request.requestId) {
+          <article class="approval-card">
+            <div class="section-heading">
+              <div><h3>{{ request.sourceType }} · {{ request.sourceId }}</h3>
+                <p>Level {{ request.currentLevel }} · Due {{ request.dueAt | date:'medium' }} · Amount {{ request.amount | number:'1.2-2' }}</p></div>
+              @if (request.marginPercent !== null) { <strong>Margin {{ request.marginPercent }}%</strong> }
+            </div>
+            <pre>{{ request.snapshot }}</pre>
+            <details><summary>Decision history</summary>
+              @for (item of request.history; track item.at) {
+                <p>{{ item.decision }} · {{ item.at | date:'medium' }} · {{ item.comment }}</p>
+              }
+            </details>
+            <label [for]="'reject-' + request.requestId">Rejection reason (required to reject)</label>
+            <textarea [id]="'reject-' + request.requestId" rows="2"
+              [value]="rejectionComments.get(request.requestId) || ''"
+              (input)="setRejectionComment(request.requestId, $any($event.target).value)"></textarea>
+            <div class="button-row">
+              <button type="button" class="primary" [disabled]="loading" (click)="decide(request, 'Approve')">Approve</button>
+              <button type="button" class="danger" [disabled]="loading" (click)="decide(request, 'Reject')">Reject</button>
+            </div>
+          </article>
+        } @empty { <p class="empty">No approval requests are assigned to you.</p> }
+      </section>
+      <section class="panel">
+        <h2>Delegate approvals</h2>
+        <p>Delegates need their own approval permission and matching data scope. Delegation never expands either.</p>
+        <div class="delegation-form">
+          <label>Delegate
+            <select [(ngModel)]="delegateUserId" name="delegateUser">
+              <option value="">Choose an active user</option>
+              @for (user of users; track user.userId) { <option [value]="user.userId">{{ user.displayName }}</option> }
+            </select>
+          </label>
+          <label>Starts<input type="datetime-local" [(ngModel)]="delegationStart" name="delegationStart" /></label>
+          <label>Ends<input type="datetime-local" [(ngModel)]="delegationEnd" name="delegationEnd" /></label>
+          <button type="button" class="primary" [disabled]="loading" (click)="createDelegation()">Save delegation</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Notifications</h2>
+        @for (notification of notifications; track notification.notificationId) {
+          <div class="notification-row" [class.unread]="!notification.readAt">
+            <span>{{ notification.kind }} · {{ notification.createdAt | date:'medium' }}</span>
+            @if (!notification.readAt) {
+              <button type="button" (click)="markNotificationRead(notification)">Mark read</button>
+            }
+          </div>
+        } @empty { <p class="empty">No notifications.</p> }
+      </section>
+    }
+
+    @case ('profile') {
+      <section class="panel narrow-panel">
+        <h2>Personal profile</h2>
+        <label>Email<input [value]="profile.email" readonly /></label>
+        <label>Mobile<input [value]="profile.mobile" readonly /></label>
+        <label>Display name<input name="displayName" [(ngModel)]="profile.displayName" maxlength="150" required /></label>
+        <button type="button" class="primary" [disabled]="loading" (click)="saveProfile()">Save profile</button>
+        <button type="button" class="danger" [disabled]="loading" (click)="logout()">Sign out of this session</button>
+        <button type="button" class="danger" [disabled]="loading" (click)="logoutAll()">Sign out of all sessions</button>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><h2>Active sessions</h2><p>Device, IP and last activity are recorded by this service.</p></div>
+          <a routerLink="/m02/mfa">Set up MFA</a></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Device</th><th>IP address</th><th>Created</th><th>Last seen</th><th>Session</th><th></th></tr></thead>
+          <tbody>@for (session of sessions; track session.id) {
+            <tr><td>{{ session.device }}</td><td>{{ session.ipAddress }}</td>
+              <td>{{ session.createdAt | date:'medium' }}</td><td>{{ session.lastSeenAt | date:'medium' }}</td>
+              <td>{{ session.current ? 'Current' : 'Other' }}</td>
+              <td><button type="button" (click)="revokeSession(session)">Revoke</button></td></tr>
+          } @empty { <tr><td colspan="6" class="empty">No active sessions.</td></tr> }</tbody>
+        </table></div>
+      </section>
+    }
+
+    @case ('audit') {
+      <section class="panel">
+        <div class="section-heading"><div><h2>Immutable security and change history</h2>
+          <p>Read-only records; export reflects the same filters.</p></div>
+          <button type="button" (click)="exportAudit()">Export CSV</button></div>
+        <form class="audit-filters" (ngSubmit)="searchAudit()">
+          <label>User ID<input name="userId" [(ngModel)]="auditFilter.userId" /></label>
+          <label>Entity<input name="entity" [(ngModel)]="auditFilter.entity" /></label>
+          <label>Action<input name="action" [(ngModel)]="auditFilter.action" /></label>
+          <label>From<input type="datetime-local" name="from" [(ngModel)]="auditFilter.from" /></label>
+          <label>To<input type="datetime-local" name="to" [(ngModel)]="auditFilter.to" /></label>
+          <button type="submit" class="primary" [disabled]="loading">Search</button>
+        </form>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Before</th><th>After</th></tr></thead>
+          <tbody>@for (event of auditEvents; track event.eventId) {
+            <tr><td>{{ event.at | date:'medium':'UTC' }}</td><td>{{ event.actorSubject }}</td>
+              <td>{{ event.action }}</td><td>{{ event.entityType }} · {{ event.entityId }}</td>
+              <td><pre>{{ event.before }}</pre></td><td><pre>{{ event.after }}</pre></td></tr>
+          } @empty { <tr><td colspan="6" class="empty">No audit events match these filters.</td></tr> }</tbody>
+        </table></div>
+      </section>
+    }
+  }
+</main>

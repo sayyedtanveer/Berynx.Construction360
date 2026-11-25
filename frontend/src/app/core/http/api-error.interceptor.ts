@@ -27,10 +27,12 @@ export const apiErrorInterceptor: HttpInterceptorFn = (request, next) => {
               problem?.title ??
               'The request could not be completed.';
 
-        errors.report({
-          message,
-          traceId: problem?.traceId ?? problem?.extensions?.traceId,
-        });
+        if (error.status !== 401) {
+          errors.report({
+            message,
+            traceId: problem?.traceId ?? problem?.extensions?.traceId,
+          });
+        }
       }
 
       return throwError(() => error);

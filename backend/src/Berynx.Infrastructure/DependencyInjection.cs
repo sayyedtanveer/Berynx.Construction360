@@ -27,7 +27,6 @@ public static class DependencyInjection
             options.UseNpgsql(
                 connectionString,
                 postgres => postgres.MigrationsAssembly(migrationsAssembly)));
-
         return services;
     }
 }

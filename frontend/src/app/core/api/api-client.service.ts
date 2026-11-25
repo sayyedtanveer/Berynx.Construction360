@@ -16,6 +16,18 @@ export class ApiClient {
     return this.http.post<TResponse>(this.endpoint(path), body);
   }
 
+  put<TResponse, TRequest>(path: string, body: TRequest): Observable<TResponse> {
+    return this.http.put<TResponse>(this.endpoint(path), body);
+  }
+
+  delete<TResponse>(path: string): Observable<TResponse> {
+    return this.http.delete<TResponse>(this.endpoint(path));
+  }
+
+  getBlob(path: string): Observable<Blob> {
+    return this.http.get(this.endpoint(path), { responseType: 'blob' });
+  }
+
   private endpoint(path: string): string {
     return `${this.baseUrl.replace(/\/$/, '')}/${path.replace(/^\/+/, '')}`;
   }

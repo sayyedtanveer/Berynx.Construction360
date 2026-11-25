@@ -1,11 +1,69 @@
 import { Routes } from '@angular/router';
+import { titles } from './features/onboarding/setup-fields';
+import { authGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
   {
+    path: 'login',
+    loadComponent: () => import('./features/identity-access/login.page').then((m) => m.LoginPage),
+    title: 'Sign In · Berynx Construction 360',
+  },
+  {
     path: '',
-    loadComponent: () =>
-      import('./features/home/home.page').then((module) => module.HomePage),
+    loadComponent: () => import('./features/home/home.page').then((module) => module.HomePage),
+    canActivate: [authGuard],
     title: 'Berynx Construction 360',
   },
+  ...['home', ...Object.keys(titles)].map((page) => ({
+    path: 'setup/' + page,
+    data: { page },
+    title: titles[page] ?? 'Workspace',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/onboarding/setup.page').then((m) => m.SetupPage),
+  })),
+  ...[
+    ['mfa', 'SCR-M02-02 MFA setup'],
+    ['users', 'SCR-M02-03 Users'],
+    ['roles', 'SCR-M02-04 Roles and permissions'],
+    ['approval-rules', 'SCR-M02-05 Approval rules'],
+    ['approvals', 'SCR-M02-06 My approvals'],
+    ['profile', 'SCR-M02-07 Profile and sessions'],
+    ['audit', 'SCR-M02-08 Audit log'],
+  ].map(([path, title]) => ({
+    path: `m02/${path}`,
+    data: { screen: path },
+    title,
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/identity-access/m02.page').then((m) => m.M02Page),
+  })),
+  ...[
+    ['customers', 'SCR-M03-01 Customers'],
+    ['sites', 'SCR-M03-02 Customer sites'],
+    ['contacts', 'SCR-M03-03 Contacts'],
+    ['suppliers', 'SCR-M03-04 Suppliers and plants'],
+    ['plants', 'SCR-M03-04 Supplier plants'],
+    ['products', 'SCR-M03-05 Products'],
+    ['price-lists', 'SCR-M03-06 Price lists'],
+    ['price-lines', 'SCR-M03-06 Price list lines'],
+    ['rmc-rate-cards', 'SCR-M03-06 RMC rate cards'],
+    ['vehicles', 'SCR-M03-07 Vehicles and transit mixers'],
+    ['drivers', 'SCR-M03-08 Drivers'],
+    ['equipment', 'SCR-M03-09 Pumps and equipment'],
+    ['tax', 'SCR-M03-10 Tax and HSN'],
+    ['category-tax-overrides', 'SCR-M03-10 Customer category GST overrides'],
+    ['units', 'SCR-M03-11 Units and conversions'],
+    ['payment-terms', 'SCR-M03-12 Payment terms'],
+    ['charge-types', 'SCR-M03-13 Charge types'],
+    ['bank-accounts', 'SCR-M03-14 Bank and cash accounts'],
+    ['customer-360', 'SCR-M03-01 Customer 360'],
+    ['supplier-bank-accounts', 'SCR-M03-04 Supplier bank accounts'],
+    ['fleet-compliance', 'SCR-M03-07 Fleet compliance'],
+  ].map(([path, title]) => ({
+    path: `m03/${path}`,
+    data: { screen: path },
+    title,
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/masters/m03.page').then((m) => m.M03Page),
+  })),
   { path: '**', redirectTo: '' },
 ];

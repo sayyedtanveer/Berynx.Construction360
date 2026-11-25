@@ -1,21 +1,20 @@
-<div class="app-shell">
-  <header class="topbar">
-    <a class="brand" routerLink="/" aria-label="Berynx Construction 360 home">
-      <span class="brand-mark" aria-hidden="true">BC</span>
-      <span>Berynx Construction 360</span>
-    </a>
-    <nav aria-label="Primary navigation">
-      <a routerLink="/">Overview</a>
-    </nav>
-    <span class="topbar-note">Construction operations, connected</span>
-  </header>
+@if (httpErrors.notice(); as notice) {
+  <div class="global-error" role="alert">
+    <span>{{ notice.message }}</span>
+    <button type="button" (click)="httpErrors.clear()">Dismiss</button>
+  </div>
+}
 
-  @if (httpErrors.notice(); as notice) {
-    <section class="global-error" role="alert">
-      <span>{{ notice.message }}</span>
-      <button type="button" (click)="httpErrors.clear()">Dismiss</button>
-    </section>
-  }
-
+@if (isLoginPage()) {
   <router-outlet />
-</div>
+} @else {
+  <div class="app-layout">
+    <app-sidebar />
+    <div class="app-main">
+      <app-header />
+      <main class="app-content">
+        <router-outlet />
+      </main>
+    </div>
+  </div>
+}

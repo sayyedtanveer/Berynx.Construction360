@@ -1,0 +1,239 @@
+<main>
+  <nav aria-label="Workspace">
+    @if (session['platform']) {
+      <a routerLink="/setup/platform">Platform tenants</a>
+    }
+    @if (session['admin']) {
+      <a routerLink="/setup/wizard">Onboarding</a><a routerLink="/setup/usage">Plan and usage</a>
+    } @else if (session['accounts']) {
+      <a routerLink="/setup/openings">Opening balances</a>
+    }
+  </nav>
+  <h1>{{ titles[page] || 'Construction workspace' }}</h1>
+  @if (error) {
+    <p role="alert" class="error">{{ error }}</p>
+    <button (click)="load()">Reload</button>
+  }
+  @if (loading) {
+    <p role="status">Loading workspace…</p>
+  } @else if (session['authenticated']) {
+    @if (notice) {
+      <p role="status">{{ notice }}</p>
+    }
+    @if (locked) {
+      <p class="notice">
+        Read-only ·
+        {{
+          state['liveAt'] && page === 'openings'
+            ? 'Opening balances are locked after go-live.'
+            : state['status']
+        }}
+      </p>
+    }
+    @if (page === 'platform') {
+      <a routerLink="/setup/create">Create tenant</a>
+      @for (t of tenants; track t['tenantId']) {
+        <section>
+          <h2>{{ t['name'] }}</h2>
+          <p>{{ t['plan'] }} · {{ t['status'] }}</p>
+          @if (t['exportUntil']) {
+            <p>
+              Export available until {{ t['exportUntil'] | date: 'medium' : '+0530' }} IST. Data is
+              retained for disposition review.
+            </p>
+          } @else {
+            <button (click)="selected = t; status = t['status']">Change status</button>
+          }
+        </section>
+      } @empty {
+        <p>Create the first tenant to start onboarding.</p>
+      }
+      <button [disabled]="pageNumber === 1" (click)="pageNumber = pageNumber - 1; load()">
+        Previous
+      </button>
+      <button [disabled]="tenants.length < 50" (click)="pageNumber = pageNumber + 1; load()">
+        Next
+      </button>
+      @if (selected) {
+        <form (ngSubmit)="lifecycle()">
+          <fieldset>
+            <legend>{{ selected['name'] }}</legend>
+            <label
+              >Status<select name="status" [(ngModel)]="status">
+                @for (x of ['Trial', 'Active', 'Suspended', 'Cancelled']; track x) {
+                  <option>{{ x }}</option>
+                }
+              </select></label
+            ><label>Reason<input name="reason" required [(ngModel)]="reason" /></label>
+          </fieldset>
+          <button [disabled]="busy || !reason.trim()">Apply status</button>
+        </form>
+      }
+    }
+    @if (session['admin'] && (page === 'home' || page === 'wizard')) {
+      <a href="/api/v1/onboarding/export">Export tenant data</a>
+    }
+    @if (page === 'wizard') {
+      <p>{{ state['progress'] }}% complete</p>
+      <progress max="100" [value]="state['progress']" aria-label="Onboarding progress"></progress>
+      <ol>
+        @for (x of steps; track x) {
+          <li>
+            <a [routerLink]="['/setup', x]">{{ titles[x] }}</a>
+          </li>
+        }
+      </ol>
+    }
+    @if (page === 'usage') {
+      @for (m of state['metrics']; track m.name) {
+        <section>
+          <h2>{{ m.name }}</h2>
+          {{ m.used }} of {{ m.limit }}
+          @if (m.blocked) {
+            <p>Limit reached. Upgrade your plan.</p>
+          } @else if (m.warning) {
+            <p>At least 80% of your allowance is in use.</p>
+          }
+        </section>
+      }
+    }
+    @if (page === 'checklist') {
+      <ul>
+        @for (c of state['checks']; track c.label) {
+          <li>
+            {{ c.passed ? 'Ready' : 'Action required' }} ·
+            <a [routerLink]="['/setup', c.route]">{{ c.label }}</a>
+          </li>
+        }
+      </ul>
+      <button [disabled]="locked || busy || !ready || state['liveAt']" (click)="save()">
+        {{ state['liveAt'] ? 'Live' : 'Go live' }}
+      </button>
+    }
+    @if (page === 'openings' && session['admin'] && !locked) {
+      <section>
+        <h2>Import master references</h2>
+        <label
+          >Tab-separated file (.tsv)<input
+            type="file"
+            accept=".tsv"
+            (change)="importMasters($event)"
+        /></label>
+        <small
+          >Columns are Kind, Reference and Name. Supported kinds are Customer, Supplier, Site and
+          Product.</small
+        >
+        @if (masterPreview.length) {
+          <p>Review {{ masterPreview.length }} records before replacing staged references.</p>
+          <ul>
+            @for (r of masterPreview.slice(0, 20); track $index) {
+              <li>{{ r['kind'] }} · {{ r['reference'] }} · {{ r['name'] }}</li>
+            }
+          </ul>
+          <button type="button" [disabled]="busy" (click)="confirmMasters()">Confirm import</button>
+        }
+      </section>
+    }
+    @if (groups.length && model[groups[0].key]) {
+      <form #form="ngForm" (ngSubmit)="save()">
+        @if (page === 'openings') {
+          <label
+            >Import Excel workbook (.xlsx)<input
+              type="file"
+              accept=".xlsx"
+              [disabled]="locked"
+              (change)="excel($event)" /></label
+          ><small>Columns in order are Kind, Ledger, Bill, Debit and Credit.</small>
+        }
+        @for (g of groups; track g.key) {
+          <section>
+            <h2>{{ g.title }}</h2>
+            @for (row of model[g.key]; track row; let i = $index) {
+              <fieldset [disabled]="locked || busy">
+                <legend>{{ g.repeat ? 'Entry ' + (i + 1) : g.title }}</legend>
+                @for (f of g.fields; track f.key) {
+                  <label
+                    >{{ f.label }}
+                    @if (f.options || f.type === 'branch' || f.type === 'registration') {
+                      <select
+                        [name]="g.key + i + f.key"
+                        [(ngModel)]="row[f.key]"
+                        (ngModelChange)="changed()"
+                        [required]="!!f.required"
+                      >
+                        <option value="">Select…</option>
+                        @if (f.type === 'branch') {
+                          @for (
+                            b of model['branches'] || state['setup']?.branches || [];
+                            track b['id']
+                          ) {
+                            <option [value]="b['id']">{{ b['name'] }}</option>
+                          }
+                        } @else if (f.type === 'registration') {
+                          @for (r of model['registrations']; track r) {
+                            <option [value]="r['gstin']">{{ r['gstin'] }}</option>
+                          }
+                        } @else {
+                          @for (o of f.options; track o) {
+                            <option>{{ o }}</option>
+                          }
+                        }
+                      </select>
+                    } @else {
+                      <input
+                        #control="ngModel"
+                        [attr.aria-invalid]="control.invalid && control.touched"
+                        [pattern]="
+                          f.key === 'pan'
+                            ? '[A-Z]{5}[0-9]{4}[A-Z]'
+                            : f.key === 'gstin'
+                              ? '[0-9A-Za-z]{15}'
+                              : '.*'
+                        "
+                        [type]="f.type || 'text'"
+                        [name]="g.key + i + f.key"
+                        [required]="!!f.required"
+                        [(ngModel)]="row[f.key]"
+                        (ngModelChange)="changed()"
+                        step="any"
+                      />
+                      @if (control.invalid && control.touched) {
+                        <small class="error">Check {{ f.label.toLowerCase() }}.</small>
+                      }
+                    }
+                  </label>
+                }
+                @if (g.key === 'registrations' && row['gstin']?.length === 15) {
+                  <output
+                    >State {{ row['gstin'].slice(0, 2) }} · PAN
+                    {{ row['gstin'].slice(2, 12) }}</output
+                  >
+                }
+                @if (row['preview']) {
+                  <output>{{ row['preview'] }}</output>
+                }
+                @if (g.repeat) {
+                  <button type="button" (click)="model[g.key].splice(i, 1); changed()">
+                    Remove entry
+                  </button>
+                }
+              </fieldset>
+            }
+            @if (g.repeat) {
+              <button [disabled]="locked || busy" type="button" (click)="add(g)">Add entry</button>
+            }
+          </section>
+        }
+        @if (page === 'openings') {
+          <p aria-live="polite">Opening difference · {{ difference }}</p>
+          @for (msg of previewErrors; track msg) {
+            <p class="error">{{ msg }}</p>
+          }
+        }
+        <button [disabled]="busy || locked || form.invalid || previewErrors.length > 0">
+          {{ page === 'create' ? 'Create tenant' : 'Save changes' }}
+        </button>
+      </form>
+    }
+  }
+</main>

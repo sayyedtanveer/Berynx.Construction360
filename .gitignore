@@ -13,6 +13,7 @@
 .env.*
 !.env.example
 **/secrets.json
+**/launchSettings.json
 
 # Local SDK/tool installations and IDE state
 **/.dotnet/
