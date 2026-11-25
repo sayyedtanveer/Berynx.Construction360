@@ -23,6 +23,7 @@ export const routes: Routes = [
   })),
   ...[
     ['mfa', 'SCR-M02-02 MFA setup'],
+    ['security', 'SCR-M02-09 Tenant security policy'],
     ['users', 'SCR-M02-03 Users'],
     ['roles', 'SCR-M02-04 Roles and permissions'],
     ['approval-rules', 'SCR-M02-05 Approval rules'],
@@ -65,5 +66,22 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/masters/m03.page').then((m) => m.M03Page),
   })),
+  {
+    path: 'm04/enquiries',
+    loadComponent: () => import('./features/crm/m04.page').then((m) => m.M04Page),
+    canActivate: [authGuard],
+    title: 'M04 Enquiries · Berynx Construction 360',
+  },
+  {
+    path: 'm05/quotations',
+    loadComponent: () => import('./features/quotations/m05.page').then((m) => m.M05Page),
+    canActivate: [authGuard],
+    title: 'M05 Quotations · Berynx Construction 360',
+  },
+  {
+    path: 'public/quotes/:token',
+    loadComponent: () => import('./features/quotations/m05.page').then((m) => m.M05PublicPage),
+    title: 'Customer quotation · Berynx Construction 360',
+  },
   { path: '**', redirectTo: '' },
 ];

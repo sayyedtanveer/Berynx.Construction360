@@ -2,6 +2,8 @@ using System.Linq.Expressions;
 using Berynx.Domain.Onboarding;
 using Berynx.Domain.IdentityAccess;
 using Berynx.Domain.Masters;
+using Berynx.Domain.Crm;
+using Berynx.Domain.Quotations;
 using Berynx.Application.Tenancy;
 using Berynx.Domain.Tenancy;
 using Microsoft.AspNetCore.Identity;
@@ -491,16 +493,19 @@ public sealed class BerynxDbContext(
                 table.HasCheckConstraint("ck_m03_price_list_dates", "\"ValidTo\" IS NULL OR \"ValidTo\" >= \"ValidFrom\"");
                 table.HasCheckConstraint("ck_m03_price_list_scope",
                     "(CASE WHEN \"CustomerPartyId\" IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN \"CustomerGroup\" IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN \"IsDefault\" THEN 1 ELSE 0 END) = 1");
+                table.HasCheckConstraint("ck_m03_price_list_basis",
+                    "\"PriceBasis\" IN ('ExPlant','Delivered','Site')");
             });
             e.HasKey(x => new { x.TenantId, x.PriceListId });
             e.Property(x => x.Name).HasMaxLength(160);
             e.Property(x => x.CustomerGroup).HasMaxLength(100);
+            e.Property(x => x.PriceBasis).HasMaxLength(16).HasDefaultValue("ExPlant");
             e.Property(x => x.Version).IsConcurrencyToken();
-            e.HasIndex(x => new { x.TenantId, x.CustomerPartyId, x.ValidFrom }).IsUnique()
+            e.HasIndex(x => new { x.TenantId, x.CustomerPartyId, x.PriceBasis, x.ValidFrom }).IsUnique()
                 .HasFilter("\"CustomerPartyId\" IS NOT NULL");
-            e.HasIndex(x => new { x.TenantId, x.CustomerGroup, x.ValidFrom }).IsUnique()
+            e.HasIndex(x => new { x.TenantId, x.CustomerGroup, x.PriceBasis, x.ValidFrom }).IsUnique()
                 .HasFilter("\"CustomerGroup\" IS NOT NULL");
-            e.HasIndex(x => new { x.TenantId, x.ValidFrom }).IsUnique().HasFilter("\"IsDefault\"");
+            e.HasIndex(x => new { x.TenantId, x.PriceBasis, x.ValidFrom }).IsUnique().HasFilter("\"IsDefault\"");
         });
         modelBuilder.Entity<M03PriceListLine>(e =>
         {
@@ -526,19 +531,22 @@ public sealed class BerynxDbContext(
             {
                 table.HasCheckConstraint("ck_m03_rmc_rate_card_rate", "\"Rate\" >= 0");
                 table.HasCheckConstraint("ck_m03_rmc_rate_card_dates", "\"EffectiveTo\" IS NULL OR \"EffectiveTo\" >= \"EffectiveFrom\"");
+                table.HasCheckConstraint("ck_m03_rmc_rate_card_basis",
+                    "\"PriceBasis\" IN ('ExPlant','Delivered','Site')");
             });
             e.HasKey(x => new { x.TenantId, x.RateCardId });
             e.Property(x => x.Grade).HasMaxLength(32);
             e.Property(x => x.SlumpBand).HasMaxLength(32);
             e.Property(x => x.AdmixtureCode).HasMaxLength(64);
             e.Property(x => x.PumpType).HasMaxLength(32);
+            e.Property(x => x.PriceBasis).HasMaxLength(16).HasDefaultValue("ExPlant");
             e.Property(x => x.Rate).HasPrecision(18, 4);
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne<M03Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId })
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new
             {
-                x.TenantId, x.ProductId, x.Grade, x.SlumpBand, x.AdmixtureCode, x.PumpType, x.EffectiveFrom
+                x.TenantId, x.ProductId, x.Grade, x.SlumpBand, x.AdmixtureCode, x.PumpType, x.PriceBasis, x.EffectiveFrom
             }).IsUnique();
         });
         modelBuilder.Entity<M03Vehicle>(e =>
@@ -619,6 +627,253 @@ public sealed class BerynxDbContext(
             e.Property(x => x.Message).HasMaxLength(1000);
             e.Property(x => x.RowJson).HasColumnType("jsonb");
             e.HasOne<M03ImportBatch>().WithMany().HasForeignKey(x => new { x.TenantId, x.BatchId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M04Enquiry>(e =>
+        {
+            e.ToTable("m04_enquiry", table =>
+            {
+                table.HasCheckConstraint("CK_m04_enquiry_status",
+                    "\"Status\" IN ('New','Contacted','Follow-up','Quotation Sent','Negotiation','Won','Lost','On hold')");
+                table.HasCheckConstraint("CK_m04_enquiry_open_followup",
+                    "\"Status\" IN ('Won','Lost') OR \"NextActionAt\" IS NOT NULL");
+                table.HasCheckConstraint("CK_m04_enquiry_won_order",
+                    "\"Status\" <> 'Won' OR \"LinkedSalesOrderId\" IS NOT NULL");
+                table.HasCheckConstraint("CK_m04_enquiry_source",
+                    "\"Source\" IN ('Phone','WalkIn','WhatsApp','Referral','SiteVisit','Website','Campaign','Repeat')");
+            });
+            e.HasKey(x => new { x.TenantId, x.EnquiryId });
+            e.Property(x => x.Number).HasMaxLength(32);
+            e.Property(x => x.Source).HasMaxLength(24);
+            e.Property(x => x.Status).HasMaxLength(24);
+            e.Property(x => x.Priority).HasMaxLength(16);
+            e.Property(x => x.LostReason).HasMaxLength(24);
+            e.Property(x => x.Notes).HasMaxLength(4000);
+            e.Property(x => x.IdempotencyKey).HasMaxLength(80);
+            e.Property(x => x.ExpectedValue).HasPrecision(18, 2);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique()
+                .HasFilter("\"IdempotencyKey\" <> ''");
+            e.HasIndex(x => new { x.TenantId, x.Status, x.NextActionAt });
+            e.HasIndex(x => new { x.TenantId, x.OwnerUserId, x.Status, x.BranchId });
+            e.HasOne<M03Party>().WithMany().HasForeignKey(x => new { x.TenantId, x.CustomerPartyId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03Site>().WithMany().HasForeignKey(x => new { x.TenantId, x.SiteId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03Contact>().WithMany().HasForeignKey(x => new { x.TenantId, x.ContactId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M04EnquiryLine>(e =>
+        {
+            e.ToTable("m04_enquiry_line", table =>
+                table.HasCheckConstraint("CK_m04_enquiry_line_quantity", "\"Quantity\" > 0"));
+            e.HasKey(x => new { x.TenantId, x.LineId });
+            e.Property(x => x.Quantity).HasPrecision(18, 3);
+            e.Property(x => x.UnitCode).HasMaxLength(16);
+            e.HasIndex(x => new { x.TenantId, x.EnquiryId });
+            e.HasOne<M04Enquiry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EnquiryId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M04EnquiryActivity>(e =>
+        {
+            e.ToTable("m04_enquiry_activity");
+            e.HasKey(x => new { x.TenantId, x.ActivityId });
+            e.Property(x => x.Kind).HasMaxLength(24);
+            e.Property(x => x.Channel).HasMaxLength(24);
+            e.Property(x => x.Outcome).HasMaxLength(500);
+            e.Property(x => x.Notes).HasMaxLength(4000);
+            e.HasIndex(x => new { x.TenantId, x.EnquiryId, x.At });
+            e.HasOne<M04Enquiry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EnquiryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M04FollowUp>(e =>
+        {
+            e.ToTable("m04_follow_up", table =>
+                table.HasCheckConstraint("CK_m04_follow_up_status", "\"Status\" IN ('Pending','Completed','Cancelled')"));
+            e.HasKey(x => new { x.TenantId, x.FollowUpId });
+            e.Property(x => x.Action).HasMaxLength(24);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.Outcome).HasMaxLength(1000);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.TenantId, x.Status, x.DueAt, x.OwnerUserId });
+            e.HasOne<M04Enquiry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EnquiryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M04AssignmentAudit>(e =>
+        {
+            e.ToTable("m04_assignment_audit");
+            e.HasKey(x => new { x.TenantId, x.AssignmentAuditId });
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.HasIndex(x => new { x.TenantId, x.EnquiryId, x.At });
+            e.HasOne<M04Enquiry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EnquiryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M04NumberCounter>(e =>
+        {
+            e.ToTable("m04_number_counter", table =>
+                table.HasCheckConstraint("CK_m04_number_counter_values", "\"CalendarYear\" BETWEEN 2000 AND 2200 AND \"NextNumber\" > 0"));
+            e.HasKey(x => new { x.TenantId, x.DocumentCode, x.CalendarYear });
+            e.Property(x => x.DocumentCode).HasMaxLength(24);
+        });
+        modelBuilder.Entity<M04AssignmentCursor>(e =>
+        {
+            e.ToTable("m04_assignment_cursor");
+            e.HasKey(x => new { x.TenantId, x.Source });
+            e.Property(x => x.Source).HasMaxLength(24);
+        });
+        modelBuilder.Entity<M04AssignmentRule>(e =>
+        {
+            e.ToTable("m04_assignment_rule");
+            e.HasKey(x => new { x.TenantId, x.RuleId });
+            e.Property(x => x.Source).HasMaxLength(24);
+            e.Property(x => x.RegionStateCode).HasMaxLength(2);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.TenantId, x.Source, x.RegionStateCode, x.Priority });
+        });
+        modelBuilder.Entity<M04SlaAlert>(e =>
+        {
+            e.ToTable("m04_sla_alert");
+            e.HasKey(x => new { x.TenantId, x.EnquiryId });
+            e.HasOne<M04Enquiry>().WithMany().HasForeignKey(x => new { x.TenantId, x.EnquiryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M05Quotation>(e =>
+        {
+            e.ToTable("m05_quotation", table =>
+            {
+                table.HasCheckConstraint("CK_m05_quotation_status",
+                    "\"Status\" IN ('Draft','Pending approval','Approved','Sent','Accepted','Rejected','Expired','Revised','Cancelled')");
+                table.HasCheckConstraint("CK_m05_quotation_price_basis",
+                    "\"PriceBasis\" IN ('ExPlant','Delivered','Site')");
+                table.HasCheckConstraint("CK_m05_quotation_amounts",
+                    "\"Subtotal\" >= 0 AND \"DiscountTotal\" >= 0 AND \"ChargesTotal\" >= 0 AND \"TaxTotal\" >= 0 AND \"Total\" >= 0");
+                table.HasCheckConstraint("CK_m05_quotation_revision",
+                    "\"RevisionNumber\" > 0");
+            });
+            e.HasKey(x => new { x.TenantId, x.QuotationId });
+            e.Property(x => x.Number).HasMaxLength(32);
+            e.Property(x => x.Status).HasMaxLength(24);
+            e.Property(x => x.PriceBasis).HasMaxLength(16);
+            e.Property(x => x.DeliveryTerms).HasMaxLength(2000);
+            e.Property(x => x.TermsAndConditions).HasMaxLength(8000);
+            e.Property(x => x.InternalNotes).HasMaxLength(4000);
+            e.Property(x => x.PlaceOfSupplyStateCode).HasMaxLength(2);
+            e.Property(x => x.CompanyLegalNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.SellerGstinSnapshot).HasMaxLength(15);
+            e.Property(x => x.CustomerNameSnapshot).HasMaxLength(200);
+            e.Property(x => x.CustomerGstinSnapshot).HasMaxLength(15);
+            e.Property(x => x.CustomerAddressSnapshot).HasMaxLength(2000);
+            e.Property(x => x.SiteAddressSnapshot).HasMaxLength(2000);
+            e.Property(x => x.CreditStatus).HasMaxLength(24);
+            e.Property(x => x.CostStatus).HasMaxLength(24);
+            e.Property(x => x.Subtotal).HasPrecision(18, 2);
+            e.Property(x => x.DiscountTotal).HasPrecision(18, 2);
+            e.Property(x => x.ChargesTotal).HasPrecision(18, 2);
+            e.Property(x => x.TaxTotal).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.Property(x => x.MarginPercent).HasPrecision(7, 4);
+            e.Property(x => x.CreditSnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.ApprovalSnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.RateComparisonJson).HasColumnType("jsonb");
+            e.Property(x => x.IdempotencyKey).HasMaxLength(80);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.TenantId, x.SeriesId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique()
+                .HasFilter("\"Number\" IS NOT NULL");
+            e.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique()
+                .HasFilter("\"IdempotencyKey\" <> ''");
+            e.HasIndex(x => new { x.TenantId, x.CustomerPartyId, x.Status, x.CreatedAt });
+            e.HasIndex(x => new { x.TenantId, x.SalespersonUserId, x.Status, x.BranchId });
+            e.HasOne<M03Party>().WithMany().HasForeignKey(x => new { x.TenantId, x.CustomerPartyId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03Site>().WithMany().HasForeignKey(x => new { x.TenantId, x.SiteId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03Contact>().WithMany().HasForeignKey(x => new { x.TenantId, x.ContactId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M04Enquiry>().WithMany().HasForeignKey(x => new { x.TenantId, x.SourceEnquiryId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M05QuotationLine>(e =>
+        {
+            e.ToTable("m05_quotation_line", table =>
+            {
+                table.HasCheckConstraint("CK_m05_quotation_line_quantity", "\"Quantity\" > 0");
+                table.HasCheckConstraint("CK_m05_quotation_line_values",
+                    "\"Rate\" >= 0 AND \"DiscountPercent\" BETWEEN 0 AND 100 AND \"GstPercent\" >= 0 AND \"TaxableAmount\" >= 0 AND \"TaxAmount\" >= 0 AND \"Total\" >= 0");
+            });
+            e.HasKey(x => new { x.TenantId, x.LineId });
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.Property(x => x.UnitCode).HasMaxLength(16);
+            e.Property(x => x.RmcGrade).HasMaxLength(32);
+            e.Property(x => x.RmcSlumpBand).HasMaxLength(32);
+            e.Property(x => x.RmcAdmixtureCode).HasMaxLength(64);
+            e.Property(x => x.RmcPumpType).HasMaxLength(32);
+            e.Property(x => x.Rate).HasPrecision(18, 4);
+            e.Property(x => x.Quantity).HasPrecision(18, 3);
+            e.Property(x => x.DiscountPercent).HasPrecision(7, 4);
+            e.Property(x => x.GstPercent).HasPrecision(7, 4);
+            e.Property(x => x.TaxableAmount).HasPrecision(18, 2);
+            e.Property(x => x.CgstAmount).HasPrecision(18, 2);
+            e.Property(x => x.SgstAmount).HasPrecision(18, 2);
+            e.Property(x => x.IgstAmount).HasPrecision(18, 2);
+            e.Property(x => x.TaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.Property(x => x.RateSource).HasMaxLength(64);
+            e.Property(x => x.RmcGrade).HasMaxLength(32);
+            e.Property(x => x.RmcSlumpBand).HasMaxLength(32);
+            e.Property(x => x.RmcAdmixtureCode).HasMaxLength(32);
+            e.Property(x => x.RmcPumpType).HasMaxLength(32);
+            e.Property(x => x.TaxSnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.TaxTreatmentSnapshotJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.TenantId, x.QuotationId });
+            e.HasOne<M05Quotation>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuotationId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M05QuotationCharge>(e =>
+        {
+            e.ToTable("m05_quotation_charge", table =>
+            {
+                table.HasCheckConstraint("CK_m05_quotation_charge_values",
+                    "\"Amount\" >= 0 AND \"TaxRatePercent\" >= 0 AND \"TaxAmount\" >= 0 AND \"Total\" >= 0");
+            });
+            e.HasKey(x => new { x.TenantId, x.ChargeId });
+            e.Property(x => x.Description).HasMaxLength(200);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.TaxRatePercent).HasPrecision(7, 4);
+            e.Property(x => x.CgstAmount).HasPrecision(18, 2);
+            e.Property(x => x.SgstAmount).HasPrecision(18, 2);
+            e.Property(x => x.IgstAmount).HasPrecision(18, 2);
+            e.Property(x => x.TaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.Property(x => x.TaxTreatmentSnapshotJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.TenantId, x.QuotationId });
+            e.HasOne<M05Quotation>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuotationId })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<M03ChargeType>().WithMany().HasForeignKey(x => new { x.TenantId, x.ChargeTypeId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M05QuotationLink>(e =>
+        {
+            e.ToTable("m05_quotation_link");
+            e.HasKey(x => new { x.TenantId, x.LinkId });
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.HasIndex(x => new { x.TenantId, x.TokenHash }).IsUnique();
+            e.HasOne<M05Quotation>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuotationId })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<M05QuotationActivity>(e =>
+        {
+            e.ToTable("m05_quotation_activity");
+            e.HasKey(x => new { x.TenantId, x.ActivityId });
+            e.Property(x => x.Action).HasMaxLength(32);
+            e.Property(x => x.DetailJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.TenantId, x.QuotationId, x.At });
+            e.HasOne<M05Quotation>().WithMany().HasForeignKey(x => new { x.TenantId, x.QuotationId })
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

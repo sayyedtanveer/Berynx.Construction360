@@ -28,6 +28,10 @@ export class ApiClient {
     return this.http.get(this.endpoint(path), { responseType: 'blob' });
   }
 
+  getText(path: string): Observable<string> {
+    return this.http.get(this.endpoint(path), { responseType: 'text' });
+  }
+
   private endpoint(path: string): string {
     return `${this.baseUrl.replace(/\/$/, '')}/${path.replace(/^\/+/, '')}`;
   }

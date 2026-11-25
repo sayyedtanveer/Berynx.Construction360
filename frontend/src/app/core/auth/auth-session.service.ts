@@ -17,6 +17,7 @@ export interface AuthTokenResponse {
   challengeToken: string | null;
   requiresTenantSelection: boolean;
   requiresMfa: boolean;
+  requiresMfaSetup?: boolean;
   tenants: Array<{ tenantId: string; name: string }>;
   provisioningUri?: string | null;
   manualKey?: string | null;

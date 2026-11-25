@@ -4,7 +4,10 @@
       <p class="eyebrow">Settings · users and access</p>
       <h1>{{ screenTitles[screen] }}</h1>
     </div>
-    <a class="text-link" routerLink="/m02/profile">Profile and sessions</a>
+    <nav aria-label="Identity and access">
+      <a class="text-link" routerLink="/m02/profile">Profile and sessions</a>
+      <a class="text-link" routerLink="/m02/security">Tenant security policy</a>
+    </nav>
   </header>
 
   @if (error) {
@@ -35,15 +38,43 @@
             <label for="mfa-code">Six-digit authenticator code</label>
             <input id="mfa-code" name="mfaCode" [(ngModel)]="mfaCode" inputmode="numeric"
               autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
+            <label for="current-mfa-code">Current authenticator or recovery code (required when replacing MFA)</label>
+            <input id="current-mfa-code" name="currentMfaCode" [(ngModel)]="currentMfaCode"
+              autocomplete="one-time-code" />
             <button type="submit" class="primary" [disabled]="loading">Verify and enable</button>
           </form>
           @if (recoveryCodes.length) {
             <section aria-labelledby="recovery-codes-title">
               <h3 id="recovery-codes-title">Recovery codes</h3>
-              <p>Store these one-time codes somewhere private. Each code works once.</p>
+              <p>Store these one-time codes somewhere private. Each code works once. Sign in again to continue.</p>
               <ul>@for (code of recoveryCodes; track code) { <li><code>{{ code }}</code></li> }</ul>
+              <a class="text-link" routerLink="/login">Sign in again</a>
             </section>
           }
+        }
+      </section>
+    }
+
+    @case ('security') {
+      <section class="panel narrow-panel">
+        @if (can('users.manage')) {
+          <h2>Require authenticator MFA by tenant role</h2>
+          <p>New sign-ins for matching roles must enroll TOTP before receiving business access. Changes are audited and enforced on the next authenticated request.</p>
+          <form (ngSubmit)="saveSecurityPolicy()">
+            <label class="checkbox-row">
+              <input type="checkbox" name="requireMfaForTenantAdmins"
+                [(ngModel)]="securityPolicy.requireMfaForTenantAdmins" />
+              Tenant Admin and Admin roles
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="requireMfaForAccounts"
+                [(ngModel)]="securityPolicy.requireMfaForAccounts" />
+              Accounts and Accountant roles
+            </label>
+            <button type="submit" class="primary" [disabled]="loading">Save security policy</button>
+          </form>
+        } @else {
+          <p class="empty" role="status">You do not have permission to manage tenant security policy.</p>
         }
       </section>
     }

@@ -42,7 +42,7 @@ public static class M03Endpoints
     public sealed record CategoryTaxOverrideWrite(Guid ProductId, string CustomerCategory, decimal RatePercent,
         DateOnly EffectiveFrom, DateOnly? EffectiveTo, string Reason);
     public sealed record PriceListWrite(string Name, Guid? CustomerPartyId, string? CustomerGroup, bool IsDefault,
-        DateOnly ValidFrom, DateOnly? ValidTo, long Version);
+        DateOnly ValidFrom, DateOnly? ValidTo, long Version, string PriceBasis = "ExPlant");
     public sealed record PriceLineWrite(Guid ProductId, decimal Rate, decimal? MinimumRate,
         decimal? MinimumMarginPercent, long Version);
     public sealed record PriceLookup(Guid CustomerPartyId, Guid ProductId, DateOnly? AsOf);
@@ -50,9 +50,9 @@ public static class M03Endpoints
         decimal Quantity, decimal? MarginPercent, string Reason);
     public sealed record RmcRateWrite(Guid ProductId, string Grade, string SlumpBand, string AdmixtureCode,
         string PumpType, decimal Rate, Guid? AdmixtureChargeTypeId, Guid? PumpChargeTypeId,
-        DateOnly EffectiveFrom, DateOnly? EffectiveTo, long Version);
+        DateOnly EffectiveFrom, DateOnly? EffectiveTo, long Version, string PriceBasis = "ExPlant");
     public sealed record RmcLookup(Guid ProductId, string Grade, string SlumpBand, string AdmixtureCode,
-        string PumpType, DateOnly? AsOf);
+        string PumpType, DateOnly? AsOf, string PriceBasis = "ExPlant");
     public sealed record UnitWrite(string UnitCode, string Name, string Symbol, long Version = 0);
     public sealed record ConversionWrite(string FromUnitCode, string ToUnitCode, decimal Factor, long Version = 0);
     public sealed record PaymentTermWrite(string Name, int DueDays, string? LedgerCode, long Version);
@@ -942,62 +942,21 @@ public static class M03Endpoints
     }
 
     private static async Task<IResult> ResolveTaxRate(
-        TaxRateLookup request, M03MasterService masters, BerynxDbContext db, OnboardingStore onboarding,
+        TaxRateLookup request, M03MasterService masters,
         CancellationToken ct)
     {
         var user = await masters.Require("masters.view", ct);
         await masters.RequireTenantWide(user, "masters.view", ct);
-        var sellerGstin = M03MasterService.NormalizeGstin(request.SellerGstin);
-        var buyerGstin = M03MasterService.NormalizeGstin(request.BuyerGstin);
-        var suppliedPlaceOfSupply = string.IsNullOrWhiteSpace(request.PlaceOfSupplyStateCode)
-            ? null
-            : NormalizeState(request.PlaceOfSupplyStateCode);
-        var placeOfSupply = suppliedPlaceOfSupply ??
-            (string.IsNullOrEmpty(buyerGstin) ? null : buyerGstin[..2]);
-        if (!string.IsNullOrEmpty(buyerGstin) && placeOfSupply is not null &&
-            buyerGstin[..2] != placeOfSupply)
-            throw new ValidationException("Place of supply must match the buyer GSTIN state prefix.");
-        if (!string.IsNullOrEmpty(sellerGstin))
+        var result = await masters.ResolveTaxRate(request.ProductId, request.CustomerCategory,
+            request.AsOf ?? DateOnly.FromDateTime(DateTime.UtcNow), request.SellerGstin,
+            request.BuyerGstin, request.PlaceOfSupplyStateCode, ct);
+        return Results.Ok(new
         {
-            var setup = OnboardingStore.Decode(await onboarding.Current());
-            var registeredGstins = setup.Registrations.Concat(setup.Branches.Select(x => x.Gstin))
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Select(M03MasterService.NormalizeGstin)
-                .ToHashSet(StringComparer.Ordinal);
-            if (!registeredGstins.Contains(sellerGstin))
-                throw new ValidationException("The seller GSTIN is not registered in this tenant's M01 setup.");
-        }
-        var product = await db.Set<M03Product>().AsNoTracking().SingleOrDefaultAsync(
-            x => x.ProductId == request.ProductId && x.IsActive, ct)
-            ?? throw new KeyNotFoundException("Product was not found.");
-        var date = request.AsOf ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        if (!string.IsNullOrWhiteSpace(request.CustomerCategory))
-        {
-            var overrideRate = await db.Set<M03CategoryTaxOverride>().AsNoTracking().Where(x =>
-                    x.ProductId == product.ProductId && x.CustomerCategory == request.CustomerCategory &&
-                    x.IsApproved && x.EffectiveFrom <= date && (x.EffectiveTo == null || x.EffectiveTo >= date))
-                .SingleOrDefaultAsync(ct);
-            if (overrideRate is not null)
-                return Results.Ok(new
-                {
-                    product.ProductId, product.HsnCode, ratePercent = overrideRate.RatePercent,
-                    source = "ApprovedCustomerCategoryOverride", overrideRate.EffectiveFrom,
-                    overrideRate.EffectiveTo, overrideRate.Reason,
-                    sellerGstin, buyerGstin, placeOfSupplyStateCode = placeOfSupply
-                });
-        }
-        var rate = await db.Set<M03TaxRate>().AsNoTracking().Where(x =>
-                x.HsnCode == product.HsnCode && x.IsActive && x.IsApproved &&
-                x.EffectiveFrom <= date && (x.EffectiveTo == null || x.EffectiveTo >= date))
-            .SingleOrDefaultAsync(ct);
-        return rate is null
-            ? Results.NotFound(new { detail = "No effective approved tax rate exists for this HSN." })
-            : Results.Ok(new
-            {
-                product.ProductId, product.HsnCode, ratePercent = rate.RatePercent, source = "Hsn",
-                rate.EffectiveFrom, rate.EffectiveTo, rate.Reason,
-                sellerGstin, buyerGstin, placeOfSupplyStateCode = placeOfSupply
-            });
+            result.ProductId, result.HsnCode, ratePercent = result.RatePercent, source = result.Source,
+            result.EffectiveFrom, result.EffectiveTo, result.Reason,
+            sellerGstin = result.SellerGstin, buyerGstin = result.BuyerGstin,
+            placeOfSupplyStateCode = result.PlaceOfSupplyStateCode
+        });
     }
 
     private static async Task<IResult> ListCategoryTaxOverrides(
@@ -1057,7 +1016,8 @@ public static class M03Endpoints
         {
             TenantId = user.TenantId, PriceListId = Guid.NewGuid(), Name = request.Name.Trim(),
             CustomerPartyId = request.CustomerPartyId, CustomerGroup = Clean(request.CustomerGroup),
-            IsDefault = request.IsDefault, ValidFrom = request.ValidFrom, ValidTo = request.ValidTo,
+            IsDefault = request.IsDefault, PriceBasis = request.PriceBasis,
+            ValidFrom = request.ValidFrom, ValidTo = request.ValidTo,
             IsActive = true, Version = 1
         };
         db.Add(row);
@@ -1076,11 +1036,12 @@ public static class M03Endpoints
             ?? throw new KeyNotFoundException("Price list was not found.");
         if (row.Version != request.Version) throw new DbUpdateConcurrencyException();
         await EnsurePriceListNoOverlap(db, request, priceListId, ct);
-        var before = new { row.Name, row.CustomerPartyId, row.CustomerGroup, row.IsDefault, row.ValidFrom, row.ValidTo };
+        var before = new { row.Name, row.CustomerPartyId, row.CustomerGroup, row.IsDefault, row.PriceBasis, row.ValidFrom, row.ValidTo };
         row.Name = request.Name.Trim();
         row.CustomerPartyId = request.CustomerPartyId;
         row.CustomerGroup = Clean(request.CustomerGroup);
         row.IsDefault = request.IsDefault;
+        row.PriceBasis = request.PriceBasis;
         row.ValidFrom = request.ValidFrom;
         row.ValidTo = request.ValidTo;
         row.Version++;
@@ -1230,7 +1191,8 @@ public static class M03Endpoints
         await masters.RequireTenantWide(user, "masters.approve", ct);
         if (request.Rate < 0 || string.IsNullOrWhiteSpace(request.Grade) ||
             string.IsNullOrWhiteSpace(request.SlumpBand) || string.IsNullOrWhiteSpace(request.PumpType) ||
-            request.EffectiveTo < request.EffectiveFrom)
+            request.EffectiveTo < request.EffectiveFrom ||
+            request.PriceBasis is not ("ExPlant" or "Delivered" or "Site"))
             throw new ValidationException("Enter a valid rate-card key, rate and effective period.");
         var product = await db.Set<M03Product>().SingleOrDefaultAsync(x =>
             x.ProductId == request.ProductId && x.Category == "RMC" && x.IsActive, ct)
@@ -1241,6 +1203,7 @@ public static class M03Endpoints
         var rows = db.Set<M03RmcRateCard>().Where(x => x.ProductId == product.ProductId &&
             x.Grade == request.Grade.Trim() && x.SlumpBand == request.SlumpBand.Trim() &&
             x.AdmixtureCode == request.AdmixtureCode.Trim() && x.PumpType == request.PumpType.Trim() &&
+            x.PriceBasis == request.PriceBasis &&
             x.IsActive);
         if (await rows.AnyAsync(x =>
                 (x.EffectiveTo == null || x.EffectiveTo >= request.EffectiveFrom) &&
@@ -1251,6 +1214,7 @@ public static class M03Endpoints
             TenantId = user.TenantId, RateCardId = Guid.NewGuid(), ProductId = request.ProductId,
             Grade = request.Grade.Trim(), SlumpBand = request.SlumpBand.Trim(),
             AdmixtureCode = request.AdmixtureCode.Trim(), PumpType = request.PumpType.Trim(),
+            PriceBasis = request.PriceBasis,
             Rate = request.Rate, AdmixtureChargeTypeId = request.AdmixtureChargeTypeId,
             PumpChargeTypeId = request.PumpChargeTypeId, EffectiveFrom = request.EffectiveFrom,
             EffectiveTo = request.EffectiveTo, IsApproved = true
@@ -1284,11 +1248,11 @@ public static class M03Endpoints
         await masters.RequireTenantWide(user, "masters.view", ct);
         var row = await masters.ResolveRmc(request.ProductId, request.Grade.Trim(), request.SlumpBand.Trim(),
             request.AdmixtureCode.Trim(), request.PumpType.Trim(),
-            request.AsOf ?? DateOnly.FromDateTime(DateTime.UtcNow), ct);
+            request.AsOf ?? DateOnly.FromDateTime(DateTime.UtcNow), ct, request.PriceBasis);
         return Results.Ok(new
         {
             row.RateCardId, row.ProductId, row.Grade, row.SlumpBand, row.AdmixtureCode, row.PumpType,
-            row.Rate, row.AdmixtureChargeTypeId, row.PumpChargeTypeId, row.EffectiveFrom, row.EffectiveTo
+            row.Rate, row.PriceBasis, row.AdmixtureChargeTypeId, row.PumpChargeTypeId, row.EffectiveFrom, row.EffectiveTo
         });
     }
 
@@ -3082,7 +3046,8 @@ public static class M03Endpoints
                      (!string.IsNullOrWhiteSpace(request.CustomerGroup) ? 1 : 0) +
                      (request.IsDefault ? 1 : 0);
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 160 || scopes != 1 ||
-            request.ValidTo < request.ValidFrom)
+            request.ValidTo < request.ValidFrom ||
+            request.PriceBasis is not ("ExPlant" or "Delivered" or "Site"))
             throw new ValidationException("A price list requires one scope (customer, group or default) and valid effective dates.");
     }
 
@@ -3093,6 +3058,7 @@ public static class M03Endpoints
             !await db.Set<M03PartyRole>().AnyAsync(x => x.PartyId == partyId && x.RoleCode == "Customer", ct))
             throw new ValidationException("A customer-specific price list requires a customer party.");
         var lists = db.Set<M03PriceList>().Where(x => x.IsActive);
+        lists = lists.Where(x => x.PriceBasis == request.PriceBasis);
         if (excluding is { } id) lists = lists.Where(x => x.PriceListId != id);
         lists = request.CustomerPartyId is { } customer
             ? lists.Where(x => x.CustomerPartyId == customer)

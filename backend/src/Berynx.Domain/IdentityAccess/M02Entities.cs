@@ -207,6 +207,7 @@ public sealed class M02AuthSession : ITenantOwned
     public Guid UserId { get; set; }
     public Guid IdentityUserId { get; set; }
     public string SecurityStamp { get; set; } = "";
+    public bool MfaSatisfied { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }

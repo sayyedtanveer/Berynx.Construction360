@@ -20,6 +20,10 @@ public static class M02Endpoints
     public sealed record LoginRequest(string Email, string Password);
     public sealed record TenantSelectionRequest(string ChallengeToken, Guid TenantId);
     public sealed record MfaLoginRequest(string ChallengeToken, string Code);
+    public sealed record MfaSetupChallengeRequest(string ChallengeToken);
+    public sealed record MfaSetupConfirmRequest(string ChallengeToken, string Code);
+    public sealed record SecurityPolicyWrite(
+        bool RequireMfaForTenantAdmins, bool RequireMfaForAccounts, long Version);
     public sealed record ForgotPasswordRequest(string Email);
     public sealed record ResetPasswordRequest(string Email, string Token, string Password);
     public sealed record InvitationActivationRequest(string Token, string? Password);
@@ -55,6 +59,17 @@ public static class M02Endpoints
         auth.MapPost("/mfa", async (MfaLoginRequest request, M02AuthenticationService authentication,
             HttpContext context, CancellationToken ct) =>
                 AuthResponse(context, await authentication.CompleteMfa(
+                    request.ChallengeToken, request.Code, ct)))
+            .AllowAnonymous();
+        auth.MapPost("/mfa/setup/begin", async (MfaSetupChallengeRequest request,
+            M02AuthenticationService authentication, CancellationToken ct) =>
+            {
+                var setup = await authentication.BeginRequiredMfaSetup(request.ChallengeToken, ct);
+                return Results.Ok(new { setup.ProvisioningUri, setup.ManualKey });
+            }).AllowAnonymous();
+        auth.MapPost("/mfa/setup/confirm", async (MfaSetupConfirmRequest request,
+            M02AuthenticationService authentication, HttpContext context, CancellationToken ct) =>
+                AuthResponse(context, await authentication.CompleteRequiredMfaSetup(
                     request.ChallengeToken, request.Code, ct)))
             .AllowAnonymous();
         auth.MapPost("/refresh", async (HttpContext context, M02AuthenticationService authentication,
@@ -166,6 +181,48 @@ public static class M02Endpoints
                 path == "/api/v1/onboarding/export",
                 context.HttpContext.RequestAborted);
             return await next(context);
+        });
+
+        api.MapGet("/security-policy", async (IM02Access access, BerynxDbContext db,
+            ICurrentTenantContext tenant, CancellationToken ct) =>
+        {
+            await RequireTenantWide(access, "users.view", ct);
+            var row = await db.Set<Tenant>().SingleAsync(x => x.TenantId == tenant.TenantId, ct);
+            var policy = OnboardingStore.Decode(row).Security;
+            return Results.Ok(new
+            {
+                policy.RequireMfaForTenantAdmins,
+                policy.RequireMfaForAccounts,
+                row.Version
+            });
+        });
+        api.MapPut("/security-policy", async (SecurityPolicyWrite request, IM02Access access,
+            BerynxDbContext db, ICurrentTenantContext tenant, CancellationToken ct) =>
+        {
+            await RequireTenantWide(access, "users.manage", ct);
+            var actor = await access.CurrentUser(ct);
+            var row = await db.Set<Tenant>().SingleAsync(x => x.TenantId == tenant.TenantId, ct);
+            if (row.Version != request.Version)
+                return Results.Conflict(new { detail = "Tenant settings changed. Reload before saving." });
+            var setup = OnboardingStore.Decode(row);
+            var before = new
+            {
+                setup.Security.RequireMfaForTenantAdmins,
+                setup.Security.RequireMfaForAccounts
+            };
+            setup.Security.RequireMfaForTenantAdmins = request.RequireMfaForTenantAdmins;
+            setup.Security.RequireMfaForAccounts = request.RequireMfaForAccounts;
+            row.Configuration = OnboardingStore.Encode(setup);
+            row.Version++;
+            Audit(db, tenant.TenantId, actor, "Tenant MFA policy changed", "Tenant",
+                tenant.TenantId, before, setup.Security);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new
+            {
+                setup.Security.RequireMfaForTenantAdmins,
+                setup.Security.RequireMfaForAccounts,
+                row.Version
+            });
         });
 
         api.MapGet("/users", async (IM02Access access, BerynxDbContext db, CancellationToken ct) =>
@@ -1048,7 +1105,8 @@ public static class M02Endpoints
         {
             var user = await access.CurrentUser(ct);
             var identityUserId = user.IdentityUserId ?? throw new UnauthorizedAccessException();
-            var recoveryCodes = await authentication.ConfirmTotp(identityUserId, request.Code, ct);
+            var recoveryCodes = await authentication.ConfirmTotp(
+                identityUserId, request.Code, request.CurrentCode, ct);
             Audit(db, tenant.TenantId, user, "MFA enabled", "User", user.UserId, null,
                 new { method = "TOTP" });
             await db.SaveChangesAsync(ct);
@@ -1109,7 +1167,7 @@ public static class M02Endpoints
         });
     }
 
-    private sealed record CodeRequest(string Code);
+    private sealed record CodeRequest(string Code, string? CurrentCode);
 
     private static IResult AuthResponse(HttpContext context, M02AuthResult result)
     {

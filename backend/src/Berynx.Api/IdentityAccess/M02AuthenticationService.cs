@@ -25,7 +25,8 @@ public sealed record M02AuthResult(
     IReadOnlyList<M02TenantChoice> Tenants,
     string? ProvisioningUri = null,
     string? ManualKey = null,
-    IReadOnlyList<string>? RecoveryCodes = null);
+    IReadOnlyList<string>? RecoveryCodes = null,
+    bool RequiresMfaSetup = false);
 
 public sealed class M02AuthenticationService(
     UserManager<M02IdentityUser> users,
@@ -93,15 +94,7 @@ public sealed class M02AuthenticationService(
                 memberships.Select(x => new M02TenantChoice(x.User.TenantId, x.Tenant.Name)).ToArray());
         }
 
-        var membership = memberships[0];
-        if (identity.TwoFactorEnabled)
-        {
-            var challenge = await CreateChallenge(identity.Id, membership.User.TenantId,
-                membership.User.UserId, "Mfa", ct);
-            return new(null, null, null, challenge, false, true, []);
-        }
-
-        return await Issue(identity, membership, ct);
+        return await IssueOrChallenge(identity, memberships[0], ct);
     }
 
     public async Task<M02AuthResult> SelectTenant(string challengeToken, Guid tenantId, CancellationToken ct)
@@ -117,12 +110,7 @@ public sealed class M02AuthenticationService(
                 new { reason = "not-authorized" }, ct);
             throw new UnauthorizedAccessException(GenericLoginError);
         }
-        if (identity.TwoFactorEnabled)
-        {
-            var token = await CreateChallenge(identity.Id, tenantId, membership.User.UserId, "Mfa", ct);
-            return new(null, null, null, token, false, true, []);
-        }
-        return await Issue(identity, membership, ct);
+        return await IssueOrChallenge(identity, membership, ct);
     }
 
     public async Task<M02AuthResult> CompleteMfa(string challengeToken, string code, CancellationToken ct)
@@ -145,18 +133,21 @@ public sealed class M02AuthenticationService(
             challenge.FailedAttempts++;
             if (challenge.FailedAttempts >= 5)
                 challenge.ConsumedAt = DateTimeOffset.UtcNow;
+            EnsureIdentitySuccess(await users.AccessFailedAsync(identity));
+            var lockedOut = await users.IsLockedOutAsync(identity);
             await challengeDb.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             if (challenge.TenantId is { } failedTenant && challenge.MembershipUserId is { } failedUser)
             {
                 await using var auditDb = new BerynxDbContext(dbOptions, new TenantScope(failedTenant));
                 AddAudit(auditDb, failedTenant, failedUser, identity.Id, "MFA failed", "Authentication",
-                    failedUser, null, new { challenge.FailedAttempts });
+                    failedUser, null, new { challenge.FailedAttempts, lockedOut });
                 await auditDb.SaveChangesAsync(ct);
             }
             throw new UnauthorizedAccessException(GenericLoginError);
         }
 
+        EnsureIdentitySuccess(await users.ResetAccessFailedCountAsync(identity));
         challenge.ConsumedAt = DateTimeOffset.UtcNow;
         await challengeDb.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -164,7 +155,67 @@ public sealed class M02AuthenticationService(
             challenge.TenantId.Value, ct);
         if (membership is null || membership.User.UserId != challenge.MembershipUserId.Value)
             throw new UnauthorizedAccessException(GenericLoginError);
-        return await Issue(identity, membership, ct);
+        await AuditMembershipEvent(membership, identity.Id, "MFA succeeded", new { method = "TOTP-or-recovery" }, ct);
+        return await Issue(identity, membership, mfaSatisfied: true, ct);
+    }
+
+    public async Task<M02AuthResult> BeginRequiredMfaSetup(string challengeToken, CancellationToken ct)
+    {
+        var challenge = await FindChallenge(challengeToken, "MfaSetup", ct);
+        var identity = await users.FindByIdAsync(challenge.IdentityUserId.ToString());
+        if (identity is null || challenge.TenantId is null || challenge.MembershipUserId is null)
+            throw new UnauthorizedAccessException(GenericLoginError);
+        var membership = await FindMembership(identity.Id, identity.NormalizedEmail ?? "", challenge.TenantId.Value, ct);
+        if (membership is null || membership.User.UserId != challenge.MembershipUserId.Value ||
+            !await IsMfaRequired(membership, ct) || identity.TwoFactorEnabled)
+            throw new UnauthorizedAccessException(GenericLoginError);
+
+        return await BeginTotp(identity.Id, ct);
+    }
+
+    public async Task<M02AuthResult> CompleteRequiredMfaSetup(
+        string challengeToken, string code, CancellationToken ct)
+    {
+        await using var transaction = await challengeDb.Database.BeginTransactionAsync(ct);
+        var challenge = await FindChallenge(challengeToken, "MfaSetup", ct);
+        if (challenge.TenantId is null || challenge.MembershipUserId is null)
+            throw new UnauthorizedAccessException(GenericLoginError);
+        var identity = await users.FindByIdAsync(challenge.IdentityUserId.ToString());
+        if (identity is null)
+            throw new UnauthorizedAccessException(GenericLoginError);
+        var membership = await FindMembership(identity.Id, identity.NormalizedEmail ?? "", challenge.TenantId.Value, ct);
+        if (membership is null || membership.User.UserId != challenge.MembershipUserId.Value ||
+            !await IsMfaRequired(membership, ct) || identity.TwoFactorEnabled)
+            throw new UnauthorizedAccessException(GenericLoginError);
+
+        IReadOnlyList<string> recoveryCodes;
+        try
+        {
+            recoveryCodes = await ConfirmTotp(identity.Id, code, null, ct);
+        }
+        catch (System.ComponentModel.DataAnnotations.ValidationException)
+        {
+            challenge.FailedAttempts++;
+            if (challenge.FailedAttempts >= 5)
+                challenge.ConsumedAt = DateTimeOffset.UtcNow;
+            EnsureIdentitySuccess(await users.AccessFailedAsync(identity));
+            var lockedOut = await users.IsLockedOutAsync(identity);
+            await challengeDb.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            await AuditMembershipEvent(membership, identity.Id, "MFA setup failed",
+                new { method = "TOTP", challenge.FailedAttempts, lockedOut }, ct);
+            throw;
+        }
+
+        challenge.ConsumedAt = DateTimeOffset.UtcNow;
+        await challengeDb.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        identity = await users.FindByIdAsync(identity.Id.ToString())
+            ?? throw new UnauthorizedAccessException(GenericLoginError);
+        await AuditMembershipEvent(membership, identity.Id, "MFA setup completed",
+            new { method = "TOTP" }, ct);
+        var result = await Issue(identity, membership, mfaSatisfied: true, ct);
+        return result with { RecoveryCodes = recoveryCodes };
     }
 
     public async Task<string?> ForgotPassword(
@@ -339,6 +390,20 @@ public sealed class M02AuthenticationService(
             throw new UnauthorizedAccessException(GenericLoginError);
         }
 
+        if (await IsMfaRequired(db, membership, tenant, ct) && !session.MfaSatisfied)
+        {
+            session.RevokedAt = now;
+            token.RevokedAt = now;
+            foreach (var active in await db.Set<M02RefreshToken>()
+                         .Where(x => x.SessionId == sessionId && x.RevokedAt == null).ToListAsync(ct))
+                active.RevokedAt = now;
+            AddAudit(db, tenantId, membership.UserId, session.IdentityUserId,
+                "Refresh rejected", sessionId, new { reason = "mfa-required" });
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            throw new UnauthorizedAccessException(GenericLoginError);
+        }
+
         token.ConsumedAt = now;
         session.LastSeenAt = now;
         session.Version++;
@@ -356,7 +421,8 @@ public sealed class M02AuthenticationService(
             new { sessionId });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new(await CreateAccessToken(identity, new Membership(membership, tenant), sessionId), nextRefresh,
+        return new(await CreateAccessToken(identity, new Membership(membership, tenant), sessionId,
+                session.MfaSatisfied), nextRefresh,
             (int)AccessLifetime.TotalSeconds, null, false, false, []);
     }
 
@@ -376,10 +442,24 @@ public sealed class M02AuthenticationService(
         return new(null, null, null, null, false, false, [], uri, key);
     }
 
-    public async Task<IReadOnlyList<string>> ConfirmTotp(Guid identityUserId, string code, CancellationToken ct)
+    public async Task<IReadOnlyList<string>> ConfirmTotp(
+        Guid identityUserId, string code, string? currentCode, CancellationToken ct)
     {
         var identity = await users.FindByIdAsync(identityUserId.ToString())
             ?? throw new UnauthorizedAccessException();
+        if (identity.TwoFactorEnabled)
+        {
+            var currentValid = VerifyTotp(identity, currentCode ?? "");
+            if (!currentValid && !string.IsNullOrWhiteSpace(currentCode))
+                currentValid = (await users.RedeemTwoFactorRecoveryCodeAsync(identity, currentCode)).Succeeded;
+            if (!currentValid)
+            {
+                await AuditIdentityEvent(identityUserId, "MFA change rejected",
+                    new { reason = "current-factor-required" }, ct);
+                throw new System.ComponentModel.DataAnnotations.ValidationException(
+                    "Verify your current authenticator or a recovery code before changing MFA.");
+            }
+        }
         if (identity.TotpPendingSecretProtected is null || !VerifySecret(identity, identity.TotpPendingSecretProtected, code))
         {
             await AuditIdentityEvent(identityUserId, "MFA setup failed", new { method = "TOTP" }, ct);
@@ -389,6 +469,9 @@ public sealed class M02AuthenticationService(
         identity.TotpPendingSecretProtected = null;
         identity.TwoFactorEnabled = true;
         EnsureIdentitySuccess(await users.UpdateAsync(identity));
+        EnsureIdentitySuccess(await users.UpdateSecurityStampAsync(identity));
+        await RevokeSession(Guid.Empty, identityUserId, identityUserId, true, ct);
+        await AuditIdentityEvent(identityUserId, "MFA enabled", new { method = "TOTP" }, ct);
         return (await users.GenerateNewTwoFactorRecoveryCodesAsync(identity, 10) ?? []).ToArray();
     }
 
@@ -459,18 +542,78 @@ public sealed class M02AuthenticationService(
         ).SingleOrDefaultAsync(ct);
         if (session is null)
             return false;
+        var membership = await db.Set<M02User>().AsNoTracking().SingleOrDefaultAsync(
+            x => x.UserId == session.UserId && x.IdentityUserId == identityUserId && x.Status == "Active", ct);
+        var activeTenant = await db.Set<Tenant>().AsNoTracking().SingleOrDefaultAsync(
+            x => x.TenantId == tenantId, ct);
+        if (membership is null || activeTenant is null ||
+            await IsMfaRequired(db, membership, activeTenant, ct) && !session.MfaSatisfied)
+            return false;
         var identity = await users.FindByIdAsync(identityUserId.ToString());
         return identity is not null &&
                string.Equals(identity.SecurityStamp ?? "", session.SecurityStamp, StringComparison.Ordinal);
     }
 
-    private async Task<M02AuthResult> Issue(M02IdentityUser identity, Membership membership, CancellationToken ct)
+    private async Task<bool> IsMfaRequired(Membership membership, CancellationToken ct)
+    {
+        await using var db = new BerynxDbContext(dbOptions, new TenantScope(membership.User.TenantId));
+        return await IsMfaRequired(db, membership.User, membership.Tenant, ct);
+    }
+
+    private static async Task<bool> IsMfaRequired(
+        BerynxDbContext db, M02User membership, Tenant tenant, CancellationToken ct)
+    {
+        var policy = OnboardingStore.Decode(tenant).Security;
+        if (!policy.RequireMfaForTenantAdmins && !policy.RequireMfaForAccounts)
+            return false;
+
+        var roles = await (
+            from assignment in db.Set<M02UserRole>()
+            join role in db.Set<M02Role>()
+                on new { assignment.TenantId, assignment.RoleId } equals new { role.TenantId, role.RoleId }
+            where assignment.UserId == membership.UserId
+            select new { role.RoleKey, role.Name }
+        ).ToListAsync(ct);
+        return M02MfaPolicy.IsRequired(policy, roles.SelectMany(x => new[] { x.RoleKey, x.Name }));
+    }
+
+    private async Task AuditMembershipEvent(
+        Membership membership, Guid identityUserId, string action, object detail, CancellationToken ct)
+    {
+        await using var db = new BerynxDbContext(dbOptions, new TenantScope(membership.User.TenantId));
+        AddAudit(db, membership.User.TenantId, membership.User.UserId, identityUserId, action,
+            "Authentication", membership.User.UserId, null, detail);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<M02AuthResult> IssueOrChallenge(
+        M02IdentityUser identity, Membership membership, CancellationToken ct)
+    {
+        if (identity.TwoFactorEnabled)
+        {
+            var challenge = await CreateChallenge(identity.Id, membership.User.TenantId,
+                membership.User.UserId, "Mfa", ct);
+            return new(null, null, null, challenge, false, true, []);
+        }
+
+        if (await IsMfaRequired(membership, ct))
+        {
+            var challenge = await CreateChallenge(identity.Id, membership.User.TenantId,
+                membership.User.UserId, "MfaSetup", ct);
+            return new(null, null, null, challenge, false, false, [], RequiresMfaSetup: true);
+        }
+
+        return await Issue(identity, membership, mfaSatisfied: false, ct);
+    }
+
+    private async Task<M02AuthResult> Issue(
+        M02IdentityUser identity, Membership membership, bool mfaSatisfied, CancellationToken ct)
     {
         await using var db = new BerynxDbContext(dbOptions, new TenantScope(membership.User.TenantId));
         var now = DateTimeOffset.UtcNow;
         var sessionId = Guid.NewGuid();
         var refresh = NewRefreshToken(membership.User.TenantId, sessionId);
-        var accessToken = await CreateAccessToken(identity, membership, sessionId);
+        var accessToken = await CreateAccessToken(identity, membership, sessionId, mfaSatisfied);
         var session = new M02AuthSession
         {
             TenantId = membership.User.TenantId,
@@ -478,6 +621,7 @@ public sealed class M02AuthenticationService(
             UserId = membership.User.UserId,
             IdentityUserId = identity.Id,
             SecurityStamp = identity.SecurityStamp ?? "",
+            MfaSatisfied = mfaSatisfied,
             CreatedAt = now,
             LastSeenAt = now,
             ExpiresAt = now.Add(SessionLifetime),
@@ -501,7 +645,8 @@ public sealed class M02AuthenticationService(
             (int)AccessLifetime.TotalSeconds, null, false, false, []);
     }
 
-    private async Task<string> CreateAccessToken(M02IdentityUser identity, Membership membership, Guid sessionId)
+    private async Task<string> CreateAccessToken(
+        M02IdentityUser identity, Membership membership, Guid sessionId, bool mfaSatisfied)
     {
         var signingKey = configuration["Jwt:SigningKey"];
         var issuer = configuration["Jwt:Issuer"];
@@ -517,7 +662,8 @@ public sealed class M02AuthenticationService(
             new("user_id", membership.User.UserId.ToString("D")),
             new("email", identity.Email ?? ""),
             new("email_verified", identity.EmailConfirmed ? "true" : "false"),
-            new("sid", sessionId.ToString("D"))
+            new("sid", sessionId.ToString("D")),
+            new("mfa", mfaSatisfied ? "true" : "false")
         };
         if (IsConfiguredPlatformAdministrator(identity.Id))
             claims.Add(new Claim("role", "PlatformAdmin"));

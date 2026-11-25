@@ -20,13 +20,28 @@ public sealed record M03ResolvedPrice(
     decimal? MinimumRate,
     decimal? MinimumMarginPercent,
     DateOnly ValidFrom,
-    DateOnly? ValidTo);
+    DateOnly? ValidTo,
+    bool ProposedRateBelowMinimum);
+
+public sealed record M03ResolvedTaxRate(
+    Guid ProductId,
+    string HsnCode,
+    decimal RatePercent,
+    string Source,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo,
+    string Reason,
+    string SellerGstin,
+    string? BuyerGstin,
+    string? PlaceOfSupplyStateCode,
+    Guid? SourceRateId);
 
 public sealed class M03MasterService(
     BerynxDbContext db,
     TenantAuthorizationService authorization,
     ICurrentTenantContext tenant,
-    IHttpContextAccessor http)
+    IHttpContextAccessor http,
+    OnboardingStore onboarding)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -171,8 +186,11 @@ public sealed class M03MasterService(
         Guid customerPartyId,
         Guid productId,
         DateOnly asOf,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        decimal? proposedRate = null,
+        string priceBasis = "ExPlant")
     {
+        ValidatePriceBasis(priceBasis);
         var customer = await db.Set<M03Party>().SingleOrDefaultAsync(
             x => x.PartyId == customerPartyId && x.IsActive,
             cancellationToken) ?? throw new KeyNotFoundException("Customer was not found.");
@@ -181,7 +199,8 @@ public sealed class M03MasterService(
             throw new ValidationException("The selected party is not a customer.");
 
         var lists = await db.Set<M03PriceList>().Where(x =>
-                x.IsActive && x.ValidFrom <= asOf && (x.ValidTo == null || x.ValidTo >= asOf))
+                x.IsActive && x.PriceBasis == priceBasis &&
+                x.ValidFrom <= asOf && (x.ValidTo == null || x.ValidTo >= asOf))
             .ToListAsync(cancellationToken);
         var selected = lists
             .Where(x => x.CustomerPartyId == customerPartyId || x.PriceListId == customer.DefaultPriceListId)
@@ -216,7 +235,66 @@ public sealed class M03MasterService(
             canViewCost ? line.MinimumRate : null,
             canViewCost ? line.MinimumMarginPercent : null,
             selected.List.ValidFrom,
-            selected.List.ValidTo);
+            selected.List.ValidTo,
+            proposedRate is { } candidate && line.MinimumRate is { } minimum && candidate < minimum);
+    }
+
+    public async Task<M03ResolvedTaxRate> ResolveTaxRate(
+        Guid productId,
+        string? customerCategory,
+        DateOnly asOf,
+        string? sellerGstin,
+        string? buyerGstin,
+        string? placeOfSupplyStateCode,
+        CancellationToken cancellationToken)
+    {
+        var seller = NormalizeGstin(sellerGstin);
+        var buyer = NormalizeGstin(buyerGstin);
+        var placeOfSupply = string.IsNullOrWhiteSpace(placeOfSupplyStateCode)
+            ? (string.IsNullOrEmpty(buyer) ? null : buyer[..2])
+            : NormalizeStateCode(placeOfSupplyStateCode);
+        if (!string.IsNullOrEmpty(buyer) && placeOfSupply is not null && buyer[..2] != placeOfSupply)
+            throw new ValidationException("Place of supply must match the buyer GSTIN state prefix.");
+        if (seller.Length > 0)
+        {
+            var setup = OnboardingStore.Decode(await onboarding.Current());
+            var registered = setup.Registrations.Concat(setup.Branches.Select(x => x.Gstin))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(NormalizeGstin).ToHashSet(StringComparer.Ordinal);
+            if (!registered.Contains(seller))
+                throw new ValidationException("The seller GSTIN is not registered in this tenant's M01 setup.");
+        }
+
+        var product = await db.Set<M03Product>().AsNoTracking().SingleOrDefaultAsync(
+            x => x.ProductId == productId && x.IsActive, cancellationToken)
+            ?? throw new KeyNotFoundException("Product was not found.");
+        if (!string.IsNullOrWhiteSpace(customerCategory))
+        {
+            var categoryRate = await db.Set<M03CategoryTaxOverride>().AsNoTracking().SingleOrDefaultAsync(x =>
+                x.ProductId == product.ProductId && x.CustomerCategory == customerCategory &&
+                x.IsApproved && x.EffectiveFrom <= asOf && (x.EffectiveTo == null || x.EffectiveTo >= asOf),
+                cancellationToken);
+            if (categoryRate is not null)
+                return new(product.ProductId, product.HsnCode, categoryRate.RatePercent,
+                    "ApprovedCustomerCategoryOverride", categoryRate.EffectiveFrom, categoryRate.EffectiveTo,
+                    categoryRate.Reason, seller, string.IsNullOrEmpty(buyer) ? null : buyer, placeOfSupply,
+                    categoryRate.OverrideId);
+        }
+        var rate = await db.Set<M03TaxRate>().AsNoTracking().SingleOrDefaultAsync(x =>
+            x.HsnCode == product.HsnCode && x.IsActive && x.IsApproved &&
+            x.EffectiveFrom <= asOf && (x.EffectiveTo == null || x.EffectiveTo >= asOf), cancellationToken)
+            ?? throw new KeyNotFoundException("No effective approved tax rate exists for this HSN.");
+        return new(product.ProductId, product.HsnCode, rate.RatePercent, "Hsn",
+            rate.EffectiveFrom, rate.EffectiveTo, rate.Reason, seller,
+            string.IsNullOrEmpty(buyer) ? null : buyer, placeOfSupply, rate.TaxRateId);
+    }
+
+    private static string NormalizeStateCode(string value)
+    {
+        var code = value.Trim();
+        if (!Regex.IsMatch(code, "^[0-9]{2}$"))
+            throw new ValidationException("Place of supply must be a two-digit GST state code.");
+        return code;
     }
 
     public async Task<M03RmcRateCard> ResolveRmc(
@@ -226,14 +304,22 @@ public sealed class M03MasterService(
         string admixtureCode,
         string pumpType,
         DateOnly asOf,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string priceBasis = "ExPlant")
     {
+        ValidatePriceBasis(priceBasis);
         var rate = await db.Set<M03RmcRateCard>().SingleOrDefaultAsync(x =>
             x.ProductId == productId && x.Grade == grade && x.SlumpBand == slumpBand &&
-            x.AdmixtureCode == admixtureCode && x.PumpType == pumpType && x.IsActive &&
+            x.AdmixtureCode == admixtureCode && x.PumpType == pumpType && x.PriceBasis == priceBasis && x.IsActive &&
             x.IsApproved && x.EffectiveFrom <= asOf && (x.EffectiveTo == null || x.EffectiveTo >= asOf),
             cancellationToken);
         return rate ?? throw new KeyNotFoundException(
             "No approved rate exists for this exact grade, slump band, admixture, and pump type.");
+    }
+
+    private static void ValidatePriceBasis(string priceBasis)
+    {
+        if (priceBasis is not ("ExPlant" or "Delivered" or "Site"))
+            throw new ValidationException("Choose ExPlant, Delivered or Site price basis.");
     }
 }

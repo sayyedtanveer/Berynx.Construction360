@@ -47,4 +47,19 @@ describe('SidebarComponent licensing navigation', () => {
     expect(element.textContent).not.toContain('Products');
     expect(element.textContent).not.toContain('Customers');
   });
+
+  it('renders M04 and M05 navigation only when the server enables those entitlements and permissions', async () => {
+    const enabled = await render(
+      ['M02', 'M04', 'M05'],
+      ['users.view', 'm04.enquiries.view', 'm05.quotations.view'],
+    );
+    expect(enabled.element.textContent).toContain('Enquiries');
+    expect(enabled.element.textContent).toContain('Quotations');
+    enabled.fixture.destroy();
+    TestBed.resetTestingModule();
+
+    const disabled = await render(['M02'], ['m04.enquiries.view', 'm05.quotations.view']);
+    expect(disabled.element.textContent).not.toContain('Enquiries');
+    expect(disabled.element.textContent).not.toContain('Quotations');
+  });
 });

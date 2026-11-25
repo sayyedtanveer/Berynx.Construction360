@@ -112,6 +112,40 @@ public sealed class TenantEntitlementService(
         }
     }
 
+    public async Task RequirePublicModule(
+        Guid tenantId, string moduleCode, bool write = false,
+        CancellationToken cancellationToken = default)
+    {
+        var tenant = await db.Set<Tenant>().IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TenantId == tenantId, cancellationToken)
+            ?? throw new UnauthorizedAccessException("The tenant is unavailable.");
+        var subscription = tenant.CurrentSubscriptionId is { } subscriptionId
+            ? await db.Set<TenantSubscription>().IgnoreQueryFilters().AsNoTracking()
+                .SingleOrDefaultAsync(x => x.TenantId == tenantId &&
+                    x.SubscriptionId == subscriptionId && x.IsCurrent, cancellationToken)
+            : null;
+        var now = DateTimeOffset.UtcNow;
+        var status = subscription is null
+            ? tenant.Status
+            : SubscriptionLifecycle.EffectiveStatus(subscription, now);
+        if (subscription is not null && now < subscription.StartsAt ||
+            status == SubscriptionLifecycle.Cancelled ||
+            write && status == SubscriptionLifecycle.Suspended)
+            throw new UnauthorizedAccessException("This tenant is not currently permitted to access public quotations.");
+
+        var enabled = await db.Set<TenantModuleEntitlement>().IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(x => x.TenantId == tenantId && x.ModuleCode == moduleCode &&
+                x.IsEnabled && x.EffectiveFrom <= now &&
+                (x.EffectiveUntil == null || x.EffectiveUntil > now), cancellationToken);
+        if (subscription is null && !enabled)
+        {
+            var modules = JsonSerializer.Deserialize<Setup>(tenant.Configuration, Workflow.Json)?.Modules ?? [];
+            enabled = modules.Contains(moduleCode, StringComparer.Ordinal);
+        }
+        if (!enabled)
+            throw new UnauthorizedAccessException($"The {moduleCode} module is not enabled for this tenant.");
+    }
+
     public async Task<IReadOnlyList<string>> EnabledModules(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;

@@ -6,6 +6,8 @@ using Berynx.Application.IdentityAccess;
 using Berynx.Infrastructure.Persistence;
 using Berynx.Api.Errors;
 using Berynx.Api.Masters;
+using Berynx.Api.Crm;
+using Berynx.Api.Quotations;
 using Berynx.Application.Masters;
 using Berynx.Application.Tenancy;
 using Berynx.Infrastructure;
@@ -70,6 +72,7 @@ builder.Services.AddRateLimiter(options =>
 });
 builder.Services.AddScoped<M02AuthenticationService>();
 builder.Services.AddScoped<M03MasterService>();
+builder.Services.AddScoped<IM05CustomerOtpProvider, UnconfiguredM05CustomerOtpProvider>();
 builder.Services.AddScoped<IM03CreditFactsProvider, M03UnavailableCreditFactsProvider>();
 builder.Services.AddScoped<IM03CreditProfileProvider, M03CreditProfileProvider>();
 builder.Services.AddScoped<M03CreditEvaluationService>();
@@ -186,6 +189,8 @@ app.MapOnboarding();
 app.MapPlatformSaaS();
 app.MapM02();
 app.MapM03();
+app.MapM04();
+app.MapM05();
 
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapGet(

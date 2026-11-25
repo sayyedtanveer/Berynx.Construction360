@@ -22,6 +22,392 @@ namespace Berynx.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Berynx.Domain.Crm.M04AssignmentAudit", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentAuditId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NewOwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PreviousOwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("TenantId", "AssignmentAuditId");
+
+                    b.HasIndex("TenantId", "EnquiryId", "At");
+
+                    b.ToTable("m04_assignment_audit", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04AssignmentCursor", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<Guid?>("LastOwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("TenantId", "Source");
+
+                    b.ToTable("m04_assignment_cursor", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04AssignmentRule", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RuleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RegionStateCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "RuleId");
+
+                    b.HasIndex("TenantId", "Source", "RegionStateCode", "Priority");
+
+                    b.ToTable("m04_assignment_rule", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04Enquiry", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ContactId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CustomerPartyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("ExpectedValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTimeOffset?>("FirstRespondedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("FirstResponseDueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid?>("LinkedSalesOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("LostReason")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTimeOffset?>("NextActionAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateOnly?>("RequiredBy")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "EnquiryId");
+
+                    b.HasIndex("TenantId", "ContactId");
+
+                    b.HasIndex("TenantId", "CustomerPartyId");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"IdempotencyKey\" <> ''");
+
+                    b.HasIndex("TenantId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "SiteId");
+
+                    b.HasIndex("TenantId", "Status", "NextActionAt");
+
+                    b.HasIndex("TenantId", "OwnerUserId", "Status", "BranchId");
+
+                    b.ToTable("m04_enquiry", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m04_enquiry_open_followup", "\"Status\" IN ('Won','Lost') OR \"NextActionAt\" IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_m04_enquiry_source", "\"Source\" IN ('Phone','WalkIn','WhatsApp','Referral','SiteVisit','Website','Campaign','Repeat')");
+
+                            t.HasCheckConstraint("CK_m04_enquiry_status", "\"Status\" IN ('New','Contacted','Follow-up','Quotation Sent','Negotiation','Won','Lost','On hold')");
+
+                            t.HasCheckConstraint("CK_m04_enquiry_won_order", "\"Status\" <> 'Won' OR \"LinkedSalesOrderId\" IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04EnquiryActivity", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<Guid>("EnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("TenantId", "ActivityId");
+
+                    b.HasIndex("TenantId", "EnquiryId", "At");
+
+                    b.ToTable("m04_enquiry_activity", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04EnquiryLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<string>("RmcAdmixtureCode")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RmcGrade")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RmcPumpType")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RmcSlumpBand")
+                        .HasColumnType("text");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("TenantId", "LineId");
+
+                    b.HasIndex("TenantId", "EnquiryId");
+
+                    b.HasIndex("TenantId", "ProductId");
+
+                    b.ToTable("m04_enquiry_line", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m04_enquiry_line_quantity", "\"Quantity\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04FollowUp", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FollowUpId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "FollowUpId");
+
+                    b.HasIndex("TenantId", "EnquiryId");
+
+                    b.HasIndex("TenantId", "Status", "DueAt", "OwnerUserId");
+
+                    b.ToTable("m04_follow_up", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m04_follow_up_status", "\"Status\" IN ('Pending','Completed','Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04NumberCounter", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentCode")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<int>("CalendarYear")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("NextNumber")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "DocumentCode", "CalendarYear");
+
+                    b.ToTable("m04_number_counter", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m04_number_counter_values", "\"CalendarYear\" BETWEEN 2000 AND 2200 AND \"NextNumber\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04SlaAlert", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AlertedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("TenantId", "EnquiryId");
+
+                    b.ToTable("m04_sla_alert", (string)null);
+                });
+
             modelBuilder.Entity("Berynx.Domain.IdentityAccess.M02ApprovalDecision", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -370,6 +756,9 @@ namespace Berynx.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("MfaSatisfied")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1435,6 +1824,12 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
 
+                    b.Property<string>("PriceBasis")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasDefaultValue("ExPlant")
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateOnly>("ValidFrom")
                         .HasColumnType("date");
 
@@ -1447,20 +1842,22 @@ namespace Berynx.Infrastructure.Persistence.Migrations
 
                     b.HasKey("TenantId", "PriceListId");
 
-                    b.HasIndex("TenantId", "ValidFrom")
+                    b.HasIndex("TenantId", "PriceBasis", "ValidFrom")
                         .IsUnique()
                         .HasFilter("\"IsDefault\"");
 
-                    b.HasIndex("TenantId", "CustomerGroup", "ValidFrom")
+                    b.HasIndex("TenantId", "CustomerGroup", "PriceBasis", "ValidFrom")
                         .IsUnique()
                         .HasFilter("\"CustomerGroup\" IS NOT NULL");
 
-                    b.HasIndex("TenantId", "CustomerPartyId", "ValidFrom")
+                    b.HasIndex("TenantId", "CustomerPartyId", "PriceBasis", "ValidFrom")
                         .IsUnique()
                         .HasFilter("\"CustomerPartyId\" IS NOT NULL");
 
                     b.ToTable("m03_price_list", null, t =>
                         {
+                            t.HasCheckConstraint("ck_m03_price_list_basis", "\"PriceBasis\" IN ('ExPlant','Delivered','Site')");
+
                             t.HasCheckConstraint("ck_m03_price_list_dates", "\"ValidTo\" IS NULL OR \"ValidTo\" >= \"ValidFrom\"");
 
                             t.HasCheckConstraint("ck_m03_price_list_scope", "(CASE WHEN \"CustomerPartyId\" IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN \"CustomerGroup\" IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN \"IsDefault\" THEN 1 ELSE 0 END) = 1");
@@ -1610,6 +2007,12 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsApproved")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("PriceBasis")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasDefaultValue("ExPlant")
+                        .HasColumnType("character varying(16)");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
 
@@ -1636,11 +2039,13 @@ namespace Berynx.Infrastructure.Persistence.Migrations
 
                     b.HasKey("TenantId", "RateCardId");
 
-                    b.HasIndex("TenantId", "ProductId", "Grade", "SlumpBand", "AdmixtureCode", "PumpType", "EffectiveFrom")
+                    b.HasIndex("TenantId", "ProductId", "Grade", "SlumpBand", "AdmixtureCode", "PumpType", "PriceBasis", "EffectiveFrom")
                         .IsUnique();
 
                     b.ToTable("m03_rmc_rate_card", null, t =>
                         {
+                            t.HasCheckConstraint("ck_m03_rmc_rate_card_basis", "\"PriceBasis\" IN ('ExPlant','Delivered','Site')");
+
                             t.HasCheckConstraint("ck_m03_rmc_rate_card_dates", "\"EffectiveTo\" IS NULL OR \"EffectiveTo\" >= \"EffectiveFrom\"");
 
                             t.HasCheckConstraint("ck_m03_rmc_rate_card_rate", "\"Rate\" >= 0");
@@ -2300,6 +2705,462 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05Quotation", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("QuotationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ApprovalRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ApprovalSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("ChargesTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("CompanyLegalNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ContactId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CostStatus")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreditSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("CreditStatus")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("CustomerAddressSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("CustomerGstinSnapshot")
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)");
+
+                    b.Property<string>("CustomerNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("CustomerPartyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DeliveryTerms")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<decimal>("DiscountTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("InternalNotes")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<bool>("IsActiveRevision")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("MarginPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("numeric(7,4)");
+
+                    b.Property<string>("Number")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("PaymentTermId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PlaceOfSupplyStateCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<string>("PriceBasis")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("RateComparisonJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SalespersonUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SellerGstinSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)");
+
+                    b.Property<Guid>("SeriesId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SiteAddressSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SourceEnquiryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("TaxTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("TermsAndConditions")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("ValidUntil")
+                        .HasColumnType("date");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId", "QuotationId");
+
+                    b.HasIndex("TenantId", "ContactId");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"IdempotencyKey\" <> ''");
+
+                    b.HasIndex("TenantId", "Number")
+                        .IsUnique()
+                        .HasFilter("\"Number\" IS NOT NULL");
+
+                    b.HasIndex("TenantId", "SiteId");
+
+                    b.HasIndex("TenantId", "SourceEnquiryId");
+
+                    b.HasIndex("TenantId", "SeriesId", "RevisionNumber")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "CustomerPartyId", "Status", "CreatedAt");
+
+                    b.HasIndex("TenantId", "SalespersonUserId", "Status", "BranchId");
+
+                    b.ToTable("m05_quotation", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m05_quotation_amounts", "\"Subtotal\" >= 0 AND \"DiscountTotal\" >= 0 AND \"ChargesTotal\" >= 0 AND \"TaxTotal\" >= 0 AND \"Total\" >= 0");
+
+                            t.HasCheckConstraint("CK_m05_quotation_price_basis", "\"PriceBasis\" IN ('ExPlant','Delivered','Site')");
+
+                            t.HasCheckConstraint("CK_m05_quotation_revision", "\"RevisionNumber\" > 0");
+
+                            t.HasCheckConstraint("CK_m05_quotation_status", "\"Status\" IN ('Draft','Pending approval','Approved','Sent','Accepted','Rejected','Expired','Revised','Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationActivity", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActivityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DetailJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("QuotationId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("TenantId", "ActivityId");
+
+                    b.HasIndex("TenantId", "QuotationId", "At");
+
+                    b.ToTable("m05_quotation_activity", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationCharge", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChargeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid?>("ChargeTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("QuotationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("TaxRatePercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("numeric(7,4)");
+
+                    b.Property<string>("TaxTreatmentSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.HasKey("TenantId", "ChargeId");
+
+                    b.HasIndex("TenantId", "ChargeTypeId");
+
+                    b.HasIndex("TenantId", "QuotationId");
+
+                    b.ToTable("m05_quotation_charge", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m05_quotation_charge_values", "\"Amount\" >= 0 AND \"TaxRatePercent\" >= 0 AND \"TaxAmount\" >= 0 AND \"Total\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationLine", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<decimal>("DiscountPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("numeric(7,4)");
+
+                    b.Property<decimal>("GstPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("numeric(7,4)");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid?>("PriceListId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<Guid>("QuotationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("RateSource")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("RmcAdmixtureCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RmcGrade")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RmcPumpType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RmcSlumpBand")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("TaxSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("TaxTreatmentSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("TenantId", "LineId");
+
+                    b.HasIndex("TenantId", "ProductId");
+
+                    b.HasIndex("TenantId", "QuotationId");
+
+                    b.ToTable("m05_quotation_line", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_m05_quotation_line_quantity", "\"Quantity\" > 0");
+
+                            t.HasCheckConstraint("CK_m05_quotation_line_values", "\"Rate\" >= 0 AND \"DiscountPercent\" BETWEEN 0 AND 100 AND \"GstPercent\" >= 0 AND \"TaxableAmount\" >= 0 AND \"TaxAmount\" >= 0 AND \"Total\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationLink", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LinkId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("QuotationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("TenantId", "LinkId");
+
+                    b.HasIndex("TenantId", "QuotationId");
+
+                    b.HasIndex("TenantId", "TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("m05_quotation_link", (string)null);
+                });
+
             modelBuilder.Entity("Berynx.Infrastructure.Persistence.M02IdentityUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2436,6 +3297,75 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("m02_identity_user_token", (string)null);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04AssignmentAudit", b =>
+                {
+                    b.HasOne("Berynx.Domain.Crm.M04Enquiry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EnquiryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04Enquiry", b =>
+                {
+                    b.HasOne("Berynx.Domain.Masters.M03Contact", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ContactId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Berynx.Domain.Masters.M03Party", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CustomerPartyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Berynx.Domain.Masters.M03Site", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SiteId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04EnquiryActivity", b =>
+                {
+                    b.HasOne("Berynx.Domain.Crm.M04Enquiry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EnquiryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04EnquiryLine", b =>
+                {
+                    b.HasOne("Berynx.Domain.Crm.M04Enquiry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EnquiryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Berynx.Domain.Masters.M03Product", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04FollowUp", b =>
+                {
+                    b.HasOne("Berynx.Domain.Crm.M04Enquiry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EnquiryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Crm.M04SlaAlert", b =>
+                {
+                    b.HasOne("Berynx.Domain.Crm.M04Enquiry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EnquiryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Berynx.Domain.IdentityAccess.M02ApprovalDecision", b =>
@@ -2893,6 +3823,77 @@ namespace Berynx.Infrastructure.Persistence.Migrations
                     b.HasOne("Berynx.Domain.Onboarding.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05Quotation", b =>
+                {
+                    b.HasOne("Berynx.Domain.Masters.M03Contact", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ContactId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Berynx.Domain.Masters.M03Party", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CustomerPartyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Berynx.Domain.Masters.M03Site", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SiteId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Berynx.Domain.Crm.M04Enquiry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourceEnquiryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationActivity", b =>
+                {
+                    b.HasOne("Berynx.Domain.Quotations.M05Quotation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuotationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationCharge", b =>
+                {
+                    b.HasOne("Berynx.Domain.Masters.M03ChargeType", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ChargeTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Berynx.Domain.Quotations.M05Quotation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuotationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationLine", b =>
+                {
+                    b.HasOne("Berynx.Domain.Masters.M03Product", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Berynx.Domain.Quotations.M05Quotation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuotationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Berynx.Domain.Quotations.M05QuotationLink", b =>
+                {
+                    b.HasOne("Berynx.Domain.Quotations.M05Quotation", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "QuotationId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

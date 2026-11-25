@@ -196,6 +196,7 @@ public sealed class M03PriceList : ITenantOwned
     public Guid? CustomerPartyId { get; set; }
     public string? CustomerGroup { get; set; }
     public bool IsDefault { get; set; }
+    public string PriceBasis { get; set; } = "ExPlant";
     public DateOnly ValidFrom { get; set; }
     public DateOnly? ValidTo { get; set; }
     public bool IsActive { get; set; } = true;
@@ -224,6 +225,7 @@ public sealed class M03RmcRateCard : ITenantOwned
     public string AdmixtureCode { get; set; } = "";
     public string PumpType { get; set; } = "";
     public decimal Rate { get; set; }
+    public string PriceBasis { get; set; } = "ExPlant";
     public Guid? AdmixtureChargeTypeId { get; set; }
     public Guid? PumpChargeTypeId { get; set; }
     public DateOnly EffectiveFrom { get; set; }

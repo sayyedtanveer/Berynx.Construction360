@@ -333,6 +333,49 @@ import { AuthSessionService, AuthTokenResponse } from '../../core/auth/auth-sess
             </form>
           }
 
+          @if (view() === 'mfa-setup') {
+            <section class="login-form" aria-labelledby="required-mfa-title">
+              <h2 class="form-title" id="required-mfa-title">Set up required MFA</h2>
+              <p class="form-subtitle">Your selected workspace requires an authenticator for this role. Business access remains blocked until setup is complete.</p>
+              @if (requiredMfaSetup()) {
+                <label for="required-mfa-uri" class="form-label">Authenticator provisioning URI</label>
+                <textarea id="required-mfa-uri" class="form-input" rows="3" readonly
+                  [value]="requiredMfaSetup()?.provisioningUri"></textarea>
+                @if (requiredMfaSetup()?.manualKey) {
+                  <label for="required-mfa-key" class="form-label">Manual setup key</label>
+                  <input id="required-mfa-key" class="form-input" readonly
+                    [value]="requiredMfaSetup()?.manualKey" />
+                }
+                <form class="login-form" (ngSubmit)="completeRequiredMfaSetup()">
+                  <div class="form-group">
+                    <label for="required-mfa-code" class="form-label">6-Digit Authenticator Code</label>
+                    <input id="required-mfa-code" type="text" class="form-input text-center"
+                      [(ngModel)]="requiredMfaCode" name="requiredMfaCode" autocomplete="one-time-code"
+                      inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required [disabled]="loading()" />
+                  </div>
+                  <button type="submit" class="btn-primary" [disabled]="loading()">
+                    {{ loading() ? 'Verifying…' : 'Verify and Continue' }}
+                  </button>
+                </form>
+              } @else {
+                <p class="loading" role="status">Preparing secure authenticator setup…</p>
+              }
+            </section>
+          }
+
+          @if (view() === 'mfa-recovery') {
+            <section class="login-form" aria-labelledby="recovery-title">
+              <h2 class="form-title" id="recovery-title">Save your recovery codes</h2>
+              <p class="form-subtitle">Each code works once. Store them securely before continuing.</p>
+              <ul class="recovery-code-list">
+                @for (code of requiredRecoveryCodes(); track code) { <li><code>{{ code }}</code></li> }
+              </ul>
+              <button type="button" class="btn-primary" (click)="continueAfterMfaSetup()">
+                I saved these codes
+              </button>
+            </section>
+          }
+
           <!-- Tenant Selection -->
           @if (view() === 'tenant') {
             <form class="login-form" (ngSubmit)="selectTenant()">
@@ -760,7 +803,7 @@ export class LoginPage implements OnInit {
   private readonly authSession = inject(AuthSessionService);
   private readonly destroyRef = inject(DestroyRef);
 
-  view = signal<'login' | 'forgot' | 'local-reset' | 'reset' | 'activate' | 'mfa' | 'tenant'>('login');
+  view = signal<'login' | 'forgot' | 'local-reset' | 'reset' | 'activate' | 'mfa' | 'mfa-setup' | 'mfa-recovery' | 'tenant'>('login');
   loading = signal(false);
   error = signal<string | null>(null);
   notice = signal<string | null>(null);
@@ -770,6 +813,8 @@ export class LoginPage implements OnInit {
   invitationToken = signal('');
   invitedEmail = signal('');
   tenants = signal<Array<{ tenantId: string; name: string }>>([]);
+  requiredMfaSetup = signal<{ provisioningUri: string; manualKey?: string } | null>(null);
+  requiredRecoveryCodes = signal<string[]>([]);
 
   email = '';
   password = '';
@@ -779,6 +824,8 @@ export class LoginPage implements OnInit {
   invitationInput = '';
   activationPassword = '';
   mfaCode = '';
+  requiredMfaCode = '';
+  private setupAccessToken = '';
   challengeToken = '';
   selectedTenantId = '';
 
@@ -894,6 +941,29 @@ export class LoginPage implements OnInit {
     });
   }
 
+  completeRequiredMfaSetup(): void {
+    this.run(this.api.post<AuthTokenResponse, { challengeToken: string; code: string }>(
+      'm02/auth/mfa/setup/confirm',
+      { challengeToken: this.challengeToken, code: this.requiredMfaCode },
+    ), (result) => {
+      this.requiredMfaCode = '';
+      if (result.accessToken) {
+        this.setupAccessToken = result.accessToken;
+        this.requiredRecoveryCodes.set(result.recoveryCodes ?? []);
+        this.view.set('mfa-recovery');
+      } else {
+        this.handleAuthResult(result);
+      }
+    });
+  }
+
+  continueAfterMfaSetup(): void {
+    if (!this.setupAccessToken) return;
+    this.authSession.setAccessToken(this.setupAccessToken);
+    this.setupAccessToken = '';
+    this.navigateAfterSignIn();
+  }
+
   selectTenant(): void {
     this.run(this.api.post<AuthTokenResponse, { challengeToken: string; tenantId: string }>(
       'm02/auth/tenant-selection',
@@ -902,6 +972,16 @@ export class LoginPage implements OnInit {
   }
 
   private handleAuthResult(result: AuthTokenResponse): void {
+    if (result.requiresMfaSetup) {
+      this.challengeToken = result.challengeToken ?? '';
+      this.requiredMfaSetup.set(null);
+      this.view.set('mfa-setup');
+      this.run(this.api.post<{ provisioningUri: string; manualKey?: string },
+        { challengeToken: string }>(
+        'm02/auth/mfa/setup/begin', { challengeToken: this.challengeToken },
+      ), (setup) => this.requiredMfaSetup.set(setup));
+      return;
+    }
     if (result.requiresMfa) {
       this.challengeToken = result.challengeToken ?? '';
       this.view.set('mfa');

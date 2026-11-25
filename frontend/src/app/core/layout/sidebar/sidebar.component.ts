@@ -355,6 +355,13 @@ export class SidebarComponent implements OnInit {
       ],
     },
     {
+      label: 'Sell',
+      items: [
+        { label: 'Enquiries', icon: '◉', path: '/m04/enquiries', permission: 'm04.enquiries.view', module: 'M04' },
+        { label: 'Quotations', icon: '▤', path: '/m05/quotations', permission: 'm05.quotations.view', module: 'M05' },
+      ],
+    },
+    {
       label: 'Platform',
       items: [
         { label: 'Tenants', icon: '🏢', path: '/setup/platform', module: 'PLATFORM' },

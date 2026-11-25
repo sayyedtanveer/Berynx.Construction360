@@ -59,6 +59,12 @@ public sealed record Invitation(string Email, string Role, DateTimeOffset At);
 public sealed record LedgerDefinition(string Code, string Name, string Group);
 public sealed record MasterSeed(string Kind, string Reference, string Name);
 public sealed record Limits(long Users, long Storage, long Documents, long Messages, long ApiRequests = 0);
+public sealed class TenantSecurityPolicy
+{
+    public bool RequireMfaForTenantAdmins { get; set; }
+    public bool RequireMfaForAccounts { get; set; }
+}
+
 public sealed class Setup
 {
     public string Currency { get; set; } = "INR";
@@ -78,6 +84,8 @@ public sealed class Setup
     public List<MasterSeed> MasterSeeds { get; set; } = [];
     public HashSet<int> Steps { get; set; } = [];
     public string[] Modules { get; set; } = [];
+    public TenantSecurityPolicy Security { get; set; } = new();
+    public int M04FirstResponseSlaMinutes { get; set; } = 30;
     public Dictionary<string, string[]> Roles { get; set; } = new()
     {
         ["TenantAdmin"] = ["onboarding.manage", "opening.manage", "usage.view"],

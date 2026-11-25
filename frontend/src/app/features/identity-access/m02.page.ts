@@ -8,6 +8,7 @@ import { AuthSessionService } from '../../core/auth/auth-session.service';
 
 type Screen =
   | 'mfa'
+  | 'security'
   | 'users'
   | 'roles'
   | 'approval-rules'
@@ -135,6 +136,7 @@ export class M02Page implements OnInit {
   readonly screen = this.route.snapshot.data['screen'] as Screen;
   readonly screenTitles: Record<Screen, string> = {
     mfa: 'Multi-factor authentication',
+    security: 'Tenant security policy',
     users: 'Users',
     roles: 'Roles and permissions',
     'approval-rules': 'Approval rules',
@@ -180,6 +182,12 @@ export class M02Page implements OnInit {
   auditFilter = { userId: '', entity: '', action: '', from: '', to: '' };
   profile = { userId: '', email: '', mobile: '', displayName: '' };
   mfaCode = '';
+  currentMfaCode = '';
+  securityPolicy = {
+    requireMfaForTenantAdmins: false,
+    requireMfaForAccounts: false,
+    version: 0,
+  };
   recoveryCodes: string[] = [];
   delegateUserId = '';
   delegationStart = '';
@@ -195,6 +203,7 @@ export class M02Page implements OnInit {
     if (this.screen === 'approvals') this.loadApprovals();
     if (this.screen === 'profile') this.loadProfile();
     if (this.screen === 'audit') this.searchAudit();
+    if (this.screen === 'security') this.loadSecurityPolicy();
   }
 
   get permissionModules(): string[] {
@@ -220,12 +229,37 @@ export class M02Page implements OnInit {
   }
 
   confirmMfa(): void {
-    this.run(this.api.post<{ recoveryCodes: string[] }, { code: string }>(
-      'm02/mfa/confirm', { code: this.mfaCode },
+    this.run(this.api.post<{ recoveryCodes: string[] }, { code: string; currentCode: string | null }>(
+      'm02/mfa/confirm', { code: this.mfaCode, currentCode: this.currentMfaCode || null },
     ), (result) => {
       this.recoveryCodes = result.recoveryCodes;
       this.notice = 'Authenticator verification completed. Save these recovery codes securely.';
       this.mfaCode = '';
+      this.currentMfaCode = '';
+      this.authSession.setAccessToken(null);
+    });
+  }
+
+  loadSecurityPolicy(): void {
+    this.loading = true;
+    this.api.get<{ permissions: string[] }>('m02/context').subscribe({
+      next: (context) => {
+        this.userPermissions.set(new Set(context.permissions));
+        this.api.get<typeof this.securityPolicy>('m02/security-policy').subscribe({
+          next: (policy) => { this.securityPolicy = policy; this.loading = false; },
+          error: (error) => this.fail(error),
+        });
+      },
+      error: (error) => this.fail(error),
+    });
+  }
+
+  saveSecurityPolicy(): void {
+    this.run(this.api.put<typeof this.securityPolicy, typeof this.securityPolicy>(
+      'm02/security-policy', this.securityPolicy,
+    ), (policy) => {
+      this.securityPolicy = policy;
+      this.notice = 'Tenant MFA policy saved. New requirements are enforced on the next request.';
     });
   }
 

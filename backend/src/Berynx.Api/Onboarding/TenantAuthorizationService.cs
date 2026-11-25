@@ -58,6 +58,22 @@ public sealed class TenantAuthorizationService(
             select assignment.AssignmentId
         ).AnyAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<(string ScopeType, Guid? ScopeId)>> Scopes(
+        Guid userId, string permissionCode, CancellationToken cancellationToken = default)
+    {
+        var rows = await (
+            from user in db.Set<M02User>()
+            join assignment in db.Set<M02UserRole>()
+                on new { user.TenantId, user.UserId } equals new { assignment.TenantId, assignment.UserId }
+            join grant in db.Set<M02RolePermission>()
+                on new { assignment.TenantId, assignment.RoleId } equals new { grant.TenantId, grant.RoleId }
+            where user.UserId == userId && user.Status == "Active" &&
+                  user.TenantId == tenant.TenantId && grant.PermissionCode == permissionCode
+            select new { assignment.ScopeType, assignment.ScopeId }
+        ).ToListAsync(cancellationToken);
+        return rows.Select(x => (x.ScopeType, x.ScopeId)).ToArray();
+    }
+
     public async Task<bool> CanAccess(
         string moduleCode,
         Guid userId,

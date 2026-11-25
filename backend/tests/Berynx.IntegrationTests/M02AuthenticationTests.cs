@@ -416,7 +416,7 @@ public sealed class M02AuthenticationTests
         var setup = await auth.BeginTotp(identity.Id, CancellationToken.None);
         Assert.That(setup.ProvisioningUri, Does.StartWith("otpauth://totp/"));
         Assert.That(setup.ManualKey, Is.Not.Empty);
-        var recoveryCodes = await auth.ConfirmTotp(identity.Id, CurrentTotp(setup.ManualKey!),
+        var recoveryCodes = await auth.ConfirmTotp(identity.Id, CurrentTotp(setup.ManualKey!), null,
             CancellationToken.None);
         Assert.That(recoveryCodes, Has.Count.EqualTo(10));
 
