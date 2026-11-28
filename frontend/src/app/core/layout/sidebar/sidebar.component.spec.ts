@@ -28,7 +28,7 @@ describe('SidebarComponent licensing navigation', () => {
       ['users.view', 'masters.view'],
     );
 
-    expect(api.get).toHaveBeenCalledWith('auth/navigation');
+    expect(api.get).toHaveBeenCalledWith('m02/context');
     expect(element.textContent).toContain('Users');
     expect(element.textContent).toContain('Products');
     const customers = Array.from(element.querySelectorAll('button')).find((button) =>

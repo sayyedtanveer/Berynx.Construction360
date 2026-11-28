@@ -15,6 +15,7 @@ public sealed class M03Party : ITenantOwned
     public string? City { get; set; }
     public string? StateCode { get; set; }
     public string? BillingAddress { get; set; }
+    public string? BillingMode { get; set; }
     public string? CustomerGroup { get; set; }
     public Guid? SalespersonUserId { get; set; }
     public string TagsJson { get; set; } = "[]";

@@ -352,6 +352,10 @@ export class SidebarComponent implements OnInit {
       label: '',
       items: [
         { label: 'Dashboard', icon: '📊', path: '/' },
+        { label: 'Operations dashboard', icon: '▦', path: '/m15/dashboard', permission: 'm15.dashboard.view', module: 'M15' },
+        { label: 'Reports', icon: '▤', path: '/m16/reports', permission: 'm16.reports.view', module: 'M16' },
+        { label: 'Promotion & Catalogue', icon: '▧', path: '/m17/promotion', permission: 'm17.catalogue.manage', module: 'M17' },
+        { label: 'Quality & disputes', icon: 'Q', path: '/m19/quality', permission: 'm19.samples.view', module: 'M19' },
       ],
     },
     {
@@ -359,6 +363,15 @@ export class SidebarComponent implements OnInit {
       items: [
         { label: 'Enquiries', icon: '◉', path: '/m04/enquiries', permission: 'm04.enquiries.view', module: 'M04' },
         { label: 'Quotations', icon: '▤', path: '/m05/quotations', permission: 'm05.quotations.view', module: 'M05' },
+        { label: 'Sales orders', icon: '▣', path: '/m06/orders', permission: 'm06.orders.view', module: 'M06' },
+        { label: 'Procurement', icon: '▱', path: '/m07/procurement', permission: 'm07.purchase_orders.view', module: 'M07' },
+        { label: 'Dispatch board', icon: '🚚', path: '/m08/dispatch', permission: 'm08.dispatch.view', module: 'M08' },
+        { label: 'Delivery challans', icon: '▤', path: '/m09/challans', permission: 'm09.challans.view', module: 'M09' },
+        { label: 'Sales invoices', icon: '▣', path: '/m10/invoices', permission: 'm10.invoices.view', module: 'M10' },
+        { label: 'Receipts', icon: '₹', path: '/m11/receipts', permission: 'm11.receipts.view', module: 'M11' },
+        { label: 'Accounting', icon: '≋', path: '/m12/accounting', permission: 'm12.reports.view', module: 'M12' },
+        { label: 'GST workspace', icon: '%', path: '/m13/gst', permission: 'm13.gst.view', module: 'M13' },
+        { label: 'Expenses', icon: '−', path: '/m14/expenses', permission: 'm14.expenses.view', module: 'M14' },
       ],
     },
     {
@@ -460,7 +473,7 @@ export class SidebarComponent implements OnInit {
   ];
 
   ngOnInit(): void {
-    this.api.get<{ permissions: string[]; modules: string[] }>('auth/navigation').subscribe({
+    this.api.get<{ permissions: string[]; modules: string[] }>('m02/context').subscribe({
       next: (navigation) => {
         this.allowedPermissions.set(new Set(navigation.permissions));
         this.enabledModules.set(new Set(navigation.modules));

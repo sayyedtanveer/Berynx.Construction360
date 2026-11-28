@@ -46,7 +46,7 @@ public class OnboardingAuthorizationTests
             ["ConnectionStrings__DefaultConnection"] =
                 "Host=127.0.0.1;Port=1;Database=unused;Username=test"
         });
-        using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        using var host = new TestApplicationFactory().WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
             {
                 services.AddAuthentication(options =>

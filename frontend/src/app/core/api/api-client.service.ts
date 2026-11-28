@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpHeaders, HttpRequest } from '@angular/common/http';
 import { API_BASE_URL } from './api-base-url.token';
 import { Observable } from 'rxjs';
 
@@ -24,6 +24,15 @@ export class ApiClient {
     return this.http.delete<TResponse>(this.endpoint(path));
   }
 
+  upload<TResponse>(path: string, file: File): Observable<HttpEvent<TResponse>> {
+    const headers = new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' });
+    const request = new HttpRequest<File>('POST', this.endpoint(path), file, {
+      headers,
+      reportProgress: true,
+      responseType: 'json',
+    });
+    return this.http.request<TResponse>(request);
+  }
   getBlob(path: string): Observable<Blob> {
     return this.http.get(this.endpoint(path), { responseType: 'blob' });
   }

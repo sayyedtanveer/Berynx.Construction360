@@ -1,4 +1,5 @@
 using Berynx.Infrastructure.Persistence;
+using Berynx.Application.Accounting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,7 @@ public static class DependencyInjection
             options.UseNpgsql(
                 connectionString,
                 postgres => postgres.MigrationsAssembly(migrationsAssembly)));
+        services.AddScoped<IM12PostingEngine, M12PostingEngine>();
         return services;
     }
 }

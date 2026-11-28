@@ -16,6 +16,7 @@ describe('M03Page', () => {
         roles: ['Customer'],
         creditLimit: 25000,
         creditDays: 30,
+        billingMode: 'Monthly',
         creditPolicy: 'Warn',
         creditStatus: 'Active',
         version: 1,
@@ -44,6 +45,7 @@ describe('M03Page', () => {
     const page = fixture.nativeElement as HTMLElement;
     expect(page.querySelector('h1')?.textContent).toContain('Customers');
     expect(page.textContent).toContain('Credit limit');
+    expect(page.textContent).toContain('Invoice billing mode');
     expect(page.textContent).toContain('Example Customer');
     expect(page.textContent).toContain('Edit');
   });
@@ -57,6 +59,7 @@ describe('M03Page', () => {
         roles: ['Customer'],
         creditLimit: 100,
         creditDays: 10,
+        billingMode: 'PerOrder',
         creditPolicy: 'Warn',
         creditStatus: 'Active',
         version: 7,
@@ -94,6 +97,7 @@ describe('M03Page', () => {
     expect(api.put).toHaveBeenCalledWith('/m03/parties/party-2', expect.objectContaining({
       version: 7,
       legalName: 'Versioned Customer',
+      billingMode: 'PerOrder',
     }));
   });
 

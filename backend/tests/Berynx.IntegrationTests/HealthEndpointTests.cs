@@ -18,7 +18,7 @@ public sealed class HealthEndpointTests
             ["ConnectionStrings__DefaultConnection"] =
                 "Host=127.0.0.1;Port=1;Database=unused;Username=test",
         });
-        _factory = new WebApplicationFactory<Program>();
+        _factory = new TestApplicationFactory();
         _client = _factory.CreateClient();
     }
 

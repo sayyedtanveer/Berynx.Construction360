@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Berynx.Application\Berynx.Application.csproj" />
     <ProjectReference Include="..\Berynx.Domain\Berynx.Domain.csproj" />
   </ItemGroup>

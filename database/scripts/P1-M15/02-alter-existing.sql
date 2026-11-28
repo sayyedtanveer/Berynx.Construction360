@@ -1,0 +1,1 @@
+-- No source tables are altered. Every dashboard query must preserve source-module tenant/branch filters.

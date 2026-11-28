@@ -92,11 +92,15 @@ import { ApiClient } from '../../core/api/api-client.service';
         <h3>Lines</h3><div class="line" *ngFor="let line of detail()?.lines">
           <strong>{{ line.description }}</strong><small>{{ line.quantity }} {{ line.unitCode }} × {{ line.rate | number:'1.2-4' }} · Discount {{ line.discountPercent }}%</small>
           <small>GST {{ line.gstPercent }}% · tax {{ line.taxAmount | currency:'INR':'symbol':'1.2-2' }}</small>
+          <small>Converted {{ line.consumedQuantity || 0 }} · remaining {{ line.remainingQuantity ?? line.quantity }} {{ line.unitCode }}</small>
           <b>{{ line.total | currency:'INR':'symbol':'1.2-2' }}</b>
         </div>
         <h3>Charges</h3><div class="line" *ngFor="let charge of detail()?.charges"><strong>{{ charge.description }}</strong><small>{{ charge.amount | currency:'INR':'symbol':'1.2-2' }} · GST {{ charge.taxRatePercent }}% · CGST {{ charge.cgstAmount | currency:'INR':'symbol':'1.2-2' }} · SGST {{ charge.sgstAmount | currency:'INR':'symbol':'1.2-2' }} · IGST {{ charge.igstAmount | currency:'INR':'symbol':'1.2-2' }}</small><b>{{ charge.total | currency:'INR':'symbol':'1.2-2' }}</b></div>
         <div class="summary"><p>Subtotal <b>{{ detail()?.subtotal | currency:'INR':'symbol':'1.2-2' }}</b></p><p>Discount <b>{{ detail()?.discountTotal | currency:'INR':'symbol':'1.2-2' }}</b></p><p>Charges <b>{{ detail()?.chargesTotal | currency:'INR':'symbol':'1.2-2' }}</b></p><p>Tax <b>{{ detail()?.taxTotal | currency:'INR':'symbol':'1.2-2' }}</b></p><p class="grand">Total <b>{{ detail()?.total | currency:'INR':'symbol':'1.2-2' }}</b></p></div>
         <div class="action-row"><button class="secondary" (click)="print(detail())">Print / Save PDF</button><button class="secondary" *ngIf="detail()?.status === 'Approved'" (click)="issue(detail())">Issue quotation</button><button class="secondary" *ngIf="detail()?.status === 'Sent'" (click)="revise(detail())">Revise</button><button class="secondary" *ngIf="detail()?.status !== 'Cancelled' && detail()?.status !== 'Revised'" (click)="clone(detail())">Clone</button><button class="danger" *ngIf="['Draft','Approved','Pending approval','Sent'].includes(detail()?.status)" (click)="cancel(detail())">Cancel</button></div>
+        <h3>Sales orders created</h3>
+        <p *ngFor="let order of detail()?.createdOrders">{{ order.number }} · {{ order.status }} · {{ order.total | currency:'INR':'symbol':'1.2-2' }}</p>
+        <p *ngIf="!detail()?.createdOrders?.length" class="notice">No sales orders have been created from this quotation.</p>
         <h3>Audit timeline</h3><div class="timeline" *ngFor="let item of detail()?.activities"><b>{{ item.action }}</b><small>{{ item.at | date:'medium' }}</small></div>
       </aside>
     </main>

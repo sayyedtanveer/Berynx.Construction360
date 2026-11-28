@@ -260,7 +260,7 @@ public static class M02Endpoints
         });
 
         api.MapGet("/context", async (IM02Access access, BerynxDbContext db, ICurrentTenantContext tenant,
-            CancellationToken ct) =>
+            TenantEntitlementService entitlements, CancellationToken ct) =>
         {
             var current = await access.CurrentUser(ct);
             var tenantName = await db.Set<Tenant>()
@@ -271,7 +271,7 @@ public static class M02Endpoints
                 from assignment in db.Set<M02UserRole>()
                 join grant in db.Set<M02RolePermission>()
                     on new { assignment.TenantId, assignment.RoleId } equals new { grant.TenantId, grant.RoleId }
-                where assignment.UserId == current.UserId && assignment.ScopeType == "All"
+                where assignment.UserId == current.UserId
                 select grant.PermissionCode
             ).Distinct().OrderBy(x => x).ToListAsync(ct);
             var scopeTypes = await db.Set<M02UserRole>()
@@ -280,6 +280,7 @@ public static class M02Endpoints
                 .Distinct()
                 .OrderBy(x => x)
                 .ToListAsync(ct);
+            var modules = await entitlements.EnabledModules(ct);
 
             return Results.Ok(new
             {
@@ -287,7 +288,8 @@ public static class M02Endpoints
                 current.DisplayName,
                 current.Email,
                 permissions,
-                scopeTypes
+                scopeTypes,
+                modules
             });
         });
 

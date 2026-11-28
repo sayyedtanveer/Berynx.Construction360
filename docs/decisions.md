@@ -15,6 +15,8 @@ Proposed decisions do not equal customer approval. Amend this log during impleme
 | ADR-009 | Schema deployment | Keep EF Core migrations as schema source; deploy reviewed PostgreSQL scripts manually, never migrate at startup | Required for P1-M02 onward |
 | ADR-010 | M01/M02 authentication ownership | ASP.NET Core Identity is the sole local credential and token authority; one account per normalized email, tenant-scoped memberships, provider retained only for email delivery; no mobile/SMS OTP | Approved by product owner; implementation and database verification in progress |
 | ADR-011 | PlatformAdmin bootstrap | Mint the global PlatformAdmin claim only for Identity IDs explicitly listed in server configuration; no tenant-facing role-grant API | Selected for SaaS foundation; operator-managed bootstrap |
+| ADR-012 | v2.3 differentiator scope | Approve DIF-P1-01..06 for Phase 1 implementation in the documented order; approve DIF-P2..P5 for planning only | Product owner approved 2026-11-26; implementation and release evidence tracked separately |
+| ADR-013 | M08 receiver verification | No OTP/SMS in Phase 1; completed trips with receiver evidence require an authorized Dispatcher/Supervisor review, persisted reviewer/time/reason, and fail-closed M18 asset validation | Product owner decided 2026-11-27; source workflow implemented, secure M18 provider and database verification pending |
 
 ## Gate 0 technical notes
 
@@ -105,3 +107,24 @@ Proposed decisions do not equal customer approval. Amend this log during impleme
 | Meter tenant API requests atomically by UTC calendar month. At quota, tenant API calls receive HTTP 429 with an upgrade contact message; usage visibility and permitted suspended read/export access remain available. | Enforces concurrency-safe usage without blocking recovery/export paths. |
 | A plan change on an existing subscription takes effect immediately; future scheduled plan changes are rejected until the model supports multiple effective subscription terms. | Avoids replacing an active entitlement snapshot before a scheduled effective date. |
 | First PlatformAdmin assignment remains operator-controlled through `PlatformAdmin:IdentityUserIds`; tenant creation and employee invitation never grant this role. | Prevents self-escalation and keeps initial global privilege outside tenant-controlled APIs. |
+
+## P1-M06 implementation decisions (proposed; owner review required)
+
+| Decision | Rationale / open validation |
+|---|---|
+| Reuse the existing tenant/year/document-code number counter for `SO-YYYY-NNNNNN`, allocated inside the sales-order transaction. | Avoids a new numbering table while preserving transaction-safe order numbers. Confirm calendar-year numbering is acceptable for the tenant's fiscal-year policy. |
+| For partial quotation call-offs, allocate each remaining lump charge and tax component in proportion to selected gross line value over remaining gross line value; the final call-off receives the residual. | Prevents charging the full quotation lump charge on every order. Product owner must validate this against transport, pumping, part-load and other per-delivery charge semantics before production. |
+| Register M06 as an optional non-core module but do not add it to plans or existing tenant entitlements in the seed package. | Avoids silently granting access; PlatformAdmin must explicitly preserve current add-ons and assign M06 for a test tenant. |
+| Keep delivered, invoiced and paid summary values unavailable until their source modules provide persisted facts. | Avoids presenting default zeros or simulated downstream success as business transactions. |
+
+## M17 public catalogue throttling
+
+The public catalogue endpoint is IP-rate-limited to 20 requests per minute, reusing the existing M02 authentication limit as a conservative initial technical safeguard. This satisfies the BRD requirement that public catalogue access be rate-limited without inventing a tenant message quota. Revisit the public-read threshold with pilot traffic and abuse telemetry. Public quote-request submission, CAPTCHA, and promotional provider delivery remain unimplemented; the public catalogue is not an end-to-end campaign flow.
+
+## 2026-11-26 - Product-owner approval - v2.3 differentiator scope
+
+The product owner approved DIF-P1-01 Profit Leakage Control, DIF-P1-02 One-Click Order 360, DIF-P1-03 Owner Daily Briefing, DIF-P1-04 Dispute-Proof Delivery Reconciliation, DIF-P1-05 WhatsApp Manual Share / Link-First, and DIF-P1-06 Guided Simple Mode for Phase 1 implementation. Implement in the exact order recorded in docs/implementation-plan.md, after closing BRD v2.2 blockers. This is scope approval only, not evidence that any differentiator is implemented, tested, database-validated, pilot-accepted, or release-ready. DIF-P2 through DIF-P5 are approved for planning only and must not be implemented in this assignment.
+
+## ADR-014 — M19 acceptance criteria and linked financial outcomes
+
+M19 evaluates results only against tenant-configured, effective-dated grade criteria; when a criterion is absent or ambiguous, the result remains `ReviewRequired` rather than applying a universal hard-coded threshold. Result corrections and dispute transitions remain append-only audited events. A failed 28-day test may hold linked posted invoices and notify users with the dispute-resolution permission through the existing in-app M02 notification record. M19 must not fabricate credit-note or replacement completion: those resolutions remain blocked until M11 posting or a real replacement-delivery reference is available. This is implemented partially; project/site-specific criteria, heat/lot evidence, scheduling, report value and database acceptance remain open in `docs/modules/P1-M19.md`.

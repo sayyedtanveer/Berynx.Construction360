@@ -358,6 +358,67 @@ public sealed class M02AuthorizationTests
         Assert.That(await provider.OpenTasks(replacementApproverId), Has.Count.EqualTo(1));
     }
 
+    [Test]
+    public async Task M08EvidenceReviewPermissionIsDistinctAndBranchAndTenantScoped()
+    {
+        var reviewerId = Guid.NewGuid();
+        var unauthorizedId = Guid.NewGuid();
+        var reviewerRoleId = Guid.NewGuid();
+        var unauthorizedRoleId = Guid.NewGuid();
+        await using (var db = Open(tenantId))
+        {
+            if (!await db.Set<M02PermissionCatalog>().AnyAsync(x => x.PermissionCode == "m08.evidence.review"))
+                db.Add(new M02PermissionCatalog
+                {
+                    PermissionCode = "m08.evidence.review", Module = "m08", Action = "evidence.review",
+                    Description = "Review delivery evidence"
+                });
+            db.AddRange(
+                new M02Role
+                {
+                    TenantId = tenantId, RoleId = reviewerRoleId, RoleKey = "evidence-reviewer-" + Guid.NewGuid().ToString("N"),
+                    Name = "Evidence reviewer", IsSystem = false, Version = 1
+                },
+                new M02Role
+                {
+                    TenantId = tenantId, RoleId = unauthorizedRoleId, RoleKey = "no-evidence-review-" + Guid.NewGuid().ToString("N"),
+                    Name = "No evidence review", IsSystem = false, Version = 1
+                },
+                new M02RolePermission
+                {
+                    TenantId = tenantId, RoleId = reviewerRoleId, PermissionCode = "m08.evidence.review"
+                });
+            foreach (var (userId, email, roleId) in new[]
+                     {
+                         (reviewerId, "reviewer-" + reviewerId.ToString("N") + "@example.invalid", reviewerRoleId),
+                         (unauthorizedId, "no-review-" + unauthorizedId.ToString("N") + "@example.invalid", unauthorizedRoleId)
+                     })
+            {
+                db.Add(new M02User
+                {
+                    TenantId = tenantId, UserId = userId, Email = email,
+                    DisplayName = "Evidence test user", Status = "Active", Version = 1
+                });
+                db.Add(new M02UserRole
+                {
+                    TenantId = tenantId, AssignmentId = Guid.NewGuid(), UserId = userId, RoleId = roleId,
+                    ScopeType = "Branch", ScopeId = branchId, AssignedAt = DateTimeOffset.UtcNow,
+                    AssignedBy = "integration-test"
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        await using var reviewerDb = Open(tenantId);
+        var access = new M02AccessService(reviewerDb, new Scope(tenantId), new HttpContextAccessor());
+        Assert.That(await access.CanAccess(reviewerId, "m08.evidence.review", branchId, plantId, null), Is.True);
+        Assert.That(await access.CanAccess(reviewerId, "m08.evidence.review", otherBranchId, otherPlantId, null), Is.False);
+        Assert.That(await access.CanAccess(unauthorizedId, "m08.evidence.review", branchId, plantId, null), Is.False);
+
+        await using var otherTenantDb = Open(otherTenantId);
+        var otherTenantAccess = new M02AccessService(otherTenantDb, new Scope(otherTenantId), new HttpContextAccessor());
+        Assert.That(await otherTenantAccess.CanAccess(reviewerId, "m08.evidence.review", branchId, plantId, null), Is.False);
+    }
     private Tenant NewTenant(Guid id) => new()
     {
         TenantId = id,

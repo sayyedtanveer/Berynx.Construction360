@@ -8,6 +8,7 @@ using Berynx.Application.IdentityAccess;
 using Berynx.Application.Masters;
 using Berynx.Application.Tenancy;
 using Berynx.Domain.IdentityAccess;
+using Berynx.Domain.Invoicing;
 using Berynx.Domain.Masters;
 using Berynx.Domain.Onboarding;
 using Berynx.Infrastructure.Persistence;
@@ -24,7 +25,7 @@ public static class M03Endpoints
         string? CustomerGroup, decimal CreditLimit, int CreditDays, Guid? PaymentTermId,
         Guid? DefaultPriceListId, string CreditPolicy,
         string CreditStatus, bool IsMsme, string? UdyamNumber, string? TdsCategory, string[] Roles, long Version,
-        Guid? SalespersonUserId = null, string? TagsJson = null);
+        Guid? SalespersonUserId = null, string? TagsJson = null, string? BillingMode = null);
     public sealed record SiteWrite(Guid CustomerPartyId, Guid? BranchId, string Name, string Address, string City,
         string StateCode, string? Gstin, decimal? Latitude, decimal? Longitude, Guid? DefaultPlantId,
         string AccessNotes, string Status, long Version);
@@ -214,7 +215,7 @@ public static class M03Endpoints
             p.PartyId, p.LegalName, p.TradeName, p.PartyType, p.Gstin, p.Pan, p.City, p.StateCode,
             p.CustomerCategory, p.CustomerGroup, p.SalespersonUserId, p.TagsJson, p.BillingAddress,
             p.PaymentTermId, p.DefaultPriceListId,
-            p.CreditLimit, p.CreditDays, p.CreditPolicy, p.CreditStatus,
+            p.CreditLimit, p.CreditDays, p.CreditPolicy, p.CreditStatus, p.BillingMode,
             p.IsMsme, p.UdyamNumber, p.TdsCategory, p.Version,
             roles = roles.Where(r => r.PartyId == p.PartyId).Select(r => r.RoleCode)
         }));
@@ -253,6 +254,7 @@ public static class M03Endpoints
             DefaultPriceListId = request.DefaultPriceListId, CreditPolicy = request.CreditPolicy,
             CreditStatus = request.CreditStatus, IsMsme = request.IsMsme,
             UdyamNumber = Clean(request.UdyamNumber), TdsCategory = Clean(request.TdsCategory),
+            BillingMode = Clean(request.BillingMode),
             CreatedAt = now, UpdatedAt = now
         };
         await ValidatePartyReferences(request, party.PartyId, db, ct);
@@ -279,7 +281,7 @@ public static class M03Endpoints
         if (party.Version != request.Version)
             throw new DbUpdateConcurrencyException();
         await ValidatePartyReferences(request, partyId, db, ct);
-        var before = new { party.LegalName, party.Gstin, party.Pan, party.CreditLimit, party.CreditDays, party.CreditPolicy, party.CreditStatus };
+        var before = new { party.LegalName, party.Gstin, party.Pan, party.CreditLimit, party.CreditDays, party.CreditPolicy, party.CreditStatus, party.BillingMode };
         party.LegalName = request.LegalName.Trim();
         party.TradeName = Clean(request.TradeName);
         party.PartyType = request.PartyType;
@@ -302,6 +304,7 @@ public static class M03Endpoints
         party.IsMsme = request.IsMsme;
         party.UdyamNumber = Clean(request.UdyamNumber);
         party.TdsCategory = Clean(request.TdsCategory);
+        party.BillingMode = Clean(request.BillingMode);
         party.Version++;
         party.UpdatedAt = DateTimeOffset.UtcNow;
         await ReplacePartyRoles(user, db, partyId, request.Roles, ct);
@@ -2864,6 +2867,10 @@ public static class M03Endpoints
             request.Roles is null || request.Roles.Length == 0)
             throw new ValidationException("Check the party name, type, credit policy and at least one party role.");
         _ = NormalizeRoles(request.Roles);
+        if (!string.IsNullOrWhiteSpace(request.BillingMode) &&
+            (!M10Rules.IsValidBillingMode(request.BillingMode) ||
+             !NormalizeRoles(request.Roles).Contains("Customer", StringComparer.Ordinal)))
+            throw new ValidationException("Billing mode must be a supported value and can only be set for a customer.");
         _ = NormalizePartyTags(request.TagsJson);
     }
 

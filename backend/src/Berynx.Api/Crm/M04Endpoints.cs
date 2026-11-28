@@ -7,6 +7,7 @@ using Berynx.Domain.Crm;
 using Berynx.Domain.IdentityAccess;
 using Berynx.Domain.Masters;
 using Berynx.Domain.Onboarding;
+using Berynx.Domain.SalesOrders;
 using Berynx.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,7 +33,7 @@ public static class M04Endpoints
         DateTimeOffset? NextActionAt, string Notes, string IdempotencyKey,
         Guid? OwnerUserId = null, bool ConfirmDuplicate = false, long Version = 0);
     public sealed record StatusWrite(string Status, string? LostReason, long Version,
-        DateTimeOffset? NextActionAt = null);
+        DateTimeOffset? NextActionAt = null, Guid? SalesOrderId = null);
     public sealed record AssignmentWrite(Guid OwnerUserId, string Reason, long Version);
     public sealed record ActivityWrite(string Kind, string Channel, string Outcome, string Notes,
         DateTimeOffset? NextActionAt, string NextAction);
@@ -324,7 +325,23 @@ public static class M04Endpoints
         if (enquiry.Version != request.Version)
             return Results.Conflict(new { detail = "The enquiry changed. Reload before continuing." });
         if (request.Status == "Won")
-            throw new ValidationException("An enquiry can be marked Won only after M06 creates and links its sales order.");
+        {
+            if (request.SalesOrderId is not { } linkedOrderId)
+                throw new ValidationException("An enquiry can be marked Won only with its persisted M06 sales order.");
+            var linkedOrder = await db.Set<M06SalesOrder>().AsNoTracking().SingleOrDefaultAsync(
+                x => x.SalesOrderId == linkedOrderId &&
+                     x.CustomerPartyId == enquiry.CustomerPartyId &&
+                     x.SourceEnquiryId == enquiryId, ct);
+            if (linkedOrder is null || linkedOrder.Status is "Cancelled" or "Short-closed")
+                throw new ValidationException("The linked order must be a live M06 order created from this enquiry.");
+            if (enquiry.LinkedSalesOrderId is not null && enquiry.LinkedSalesOrderId != linkedOrderId)
+                throw new ValidationException("The enquiry is already linked to a different sales order.");
+            enquiry.LinkedSalesOrderId = linkedOrderId;
+        }
+        else if (request.SalesOrderId is not null)
+        {
+            throw new ValidationException("A sales order reference is only valid when marking the enquiry Won.");
+        }
         if (request.Status == "Quotation Sent")
             throw new ValidationException("Only the M05 quotation issue action may update an enquiry to Quotation Sent.");
         if (!OpenStatuses.Contains(enquiry.Status) || !IsAllowedTransition(enquiry.Status, request.Status))
@@ -336,7 +353,7 @@ public static class M04Endpoints
         var before = Snapshot(enquiry);
         enquiry.Status = request.Status;
         enquiry.LostReason = request.LostReason;
-        if (request.Status == "Lost") enquiry.NextActionAt = null;
+        if (request.Status is "Lost" or "Won") enquiry.NextActionAt = null;
         enquiry.UpdatedAt = DateTimeOffset.UtcNow;
         enquiry.Version++;
         db.Add(new M04EnquiryActivity
@@ -998,12 +1015,12 @@ public static class M04Endpoints
     private static bool IsAllowedTransition(string current, string next) =>
         (current, next) switch
         {
-            ("New", "Contacted" or "On hold" or "Lost") => true,
-            ("Contacted", "Follow-up" or "Quotation Sent" or "Negotiation" or "On hold" or "Lost") => true,
-            ("Follow-up", "Contacted" or "Quotation Sent" or "Negotiation" or "On hold" or "Lost") => true,
-            ("Quotation Sent", "Negotiation" or "On hold" or "Lost") => true,
-            ("Negotiation", "Quotation Sent" or "On hold" or "Lost") => true,
-            ("On hold", "New" or "Contacted" or "Follow-up" or "Quotation Sent" or "Negotiation" or "Lost") => true,
+            ("New", "Contacted" or "On hold" or "Lost" or "Won") => true,
+            ("Contacted", "Follow-up" or "Quotation Sent" or "Negotiation" or "On hold" or "Lost" or "Won") => true,
+            ("Follow-up", "Contacted" or "Quotation Sent" or "Negotiation" or "On hold" or "Lost" or "Won") => true,
+            ("Quotation Sent", "Negotiation" or "On hold" or "Lost" or "Won") => true,
+            ("Negotiation", "Quotation Sent" or "On hold" or "Lost" or "Won") => true,
+            ("On hold", "New" or "Contacted" or "Follow-up" or "Quotation Sent" or "Negotiation" or "Lost" or "Won") => true,
             _ => false
         };
 

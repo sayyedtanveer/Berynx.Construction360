@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { titles } from './features/onboarding/setup-fields';
 import { authGuard } from './core/auth/auth.guard';
+import { moduleAccessGuard } from './core/auth/module-access.guard';
 
 export const routes: Routes = [
   {
@@ -77,6 +78,97 @@ export const routes: Routes = [
     loadComponent: () => import('./features/quotations/m05.page').then((m) => m.M05Page),
     canActivate: [authGuard],
     title: 'M05 Quotations · Berynx Construction 360',
+  },
+  {
+    path: 'm06/orders',
+    loadComponent: () => import('./features/sales-orders/m06.page').then((m) => m.M06Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M06', permission: 'm06.orders.view' },
+    title: 'M06 Sales Orders · Berynx Construction 360',
+  },
+  {
+    path: 'm07/procurement',
+    loadComponent: () => import('./features/procurement/m07.page').then((m) => m.M07Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M07', permission: 'm07.purchase_orders.view' },
+    title: 'M07 Procurement · Berynx Construction 360',
+  },
+  {
+    path: 'm08/dispatch',
+    loadComponent: () => import('./features/delivery/m08.page').then((m) => m.M08Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M08', permission: 'm08.dispatch.view' },
+    title: 'M08 Dispatch · Berynx Construction 360',
+  },
+  {
+    path: 'm09/challans',
+    loadComponent: () => import('./features/delivery-challans/m09.page').then((m) => m.M09Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M09', permission: 'm09.challans.view' },
+    title: 'M09 Delivery challans · Berynx Construction 360',
+  },
+  {
+    path: 'm10/invoices',
+    loadComponent: () => import('./features/invoicing/m10.page').then((m) => m.M10Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M10', permission: 'm10.invoices.view' },
+    title: 'M10 Sales invoices · Berynx Construction 360',
+  },
+  {
+    path: 'm11/receipts',
+    loadComponent: () => import('./features/receivables/m11.page').then((m) => m.M11Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M11', permission: 'm11.receipts.view' },
+    title: 'M11 Receipts · Berynx Construction 360',
+  },
+  {
+    path: 'm12/accounting',
+    loadComponent: () => import('./features/accounting/m12.page').then((m) => m.M12Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M12', permission: 'm12.reports.view' },
+    title: 'M12 Accounting · Berynx Construction 360',
+  },
+  {
+    path: 'm13/gst',
+    loadComponent: () => import('./features/gst/m13.page').then((m) => m.M13Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M13', permission: 'm13.gst.view' },
+    title: 'M13 GST · Berynx Construction 360',
+  },
+  {
+    path: 'm14/expenses',
+    loadComponent: () => import('./features/expenses/m14.page').then((m) => m.M14Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M14', permission: 'm14.expenses.view' },
+    title: 'M14 Expenses · Berynx Construction 360',
+  },
+  {
+    path: 'm15/dashboard',
+    loadComponent: () => import('./features/dashboard/m15.page').then((m) => m.M15Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M15', permission: 'm15.dashboard.view' },
+    title: 'M15 Dashboard · Berynx Construction 360',
+  },
+  {
+    path: 'm16/reports',
+    loadComponent: () => import('./features/reports/m16.page').then((m) => m.M16Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M16', permission: 'm16.reports.view' },
+    title: 'M16 Reports · Berynx Construction 360',
+  },
+  {
+    path: 'm17/promotion',
+    loadComponent: () => import('./features/promotion/m17.page').then((m) => m.M17Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M17', permission: 'm17.catalogue.manage' },
+    title: 'M17 Promotion & Catalogue · Berynx Construction 360',
+  },
+  {
+    path: 'm19/quality',
+    loadComponent: () => import('./features/quality/m19.page').then((m) => m.M19Page),
+    canActivate: [authGuard, moduleAccessGuard],
+    data: { module: 'M19', permission: 'm19.samples.view' },
+    title: 'M19 Quality & Disputes · Berynx Construction 360',
   },
   {
     path: 'public/quotes/:token',

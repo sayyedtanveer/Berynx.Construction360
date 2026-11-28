@@ -1,0 +1,1 @@
+-- No additional indexes. Existing source transaction indexes are used; load-time tuning requires measured plans.

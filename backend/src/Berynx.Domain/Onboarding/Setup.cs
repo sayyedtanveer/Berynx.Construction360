@@ -50,13 +50,13 @@ public sealed class SetupEvent : ITenantOwned
 }
 
 public sealed record Company(string LegalName, string TradeName, string Pan, string Address, string? Logo, string? Udyam, bool Msme, bool EInvoice, bool EWayBill, string? PaymentTerms);
-public sealed record Branch(Guid Id, string Name, string Address, string Gstin);
+public sealed record Branch(Guid Id, string Name, string Address, string Gstin, string GstRegistrationType = "Unspecified");
 public sealed record Plant(Guid Id, Guid BranchId, string Name, string Address);
 public sealed record Account(string Name, string Kind, string? Upi, string? AccountNumber = null, string? Ifsc = null);
 public sealed record TaxDefault(string Name, decimal Rate, string Unit);
 public sealed record Series(Guid BranchId, string Document, string Prefix, string BranchCode, string Pattern);
 public sealed record Invitation(string Email, string Role, DateTimeOffset At);
-public sealed record LedgerDefinition(string Code, string Name, string Group);
+public sealed record LedgerDefinition(string Code, string Name, string Group, bool IsActive = true);
 public sealed record MasterSeed(string Kind, string Reference, string Name);
 public sealed record Limits(long Users, long Storage, long Documents, long Messages, long ApiRequests = 0);
 public sealed class TenantSecurityPolicy
@@ -86,6 +86,15 @@ public sealed class Setup
     public string[] Modules { get; set; } = [];
     public TenantSecurityPolicy Security { get; set; } = new();
     public int M04FirstResponseSlaMinutes { get; set; } = 30;
+    public decimal M06RmcOverdeliveryTolerancePercent { get; set; } = 2m;
+    public decimal M06SteelOverdeliveryTolerancePercent { get; set; } = 1m;
+    public decimal M07SteelOverReceiptTolerancePercent { get; set; } = 1m;
+    public decimal M07CementOverReceiptTolerancePercent { get; set; } = 2m;
+    public decimal M08MinimumPartLoadQuantity { get; set; } = 4m;
+    public int M08FreeWaitingMinutes { get; set; } = 30;
+    public int M08PourCancellationNoticeHours { get; set; } = 4;
+    public int M08ReceiverOtpExpiryHours { get; set; } = 24;
+    public int M08ReceiverOtpMaxResends { get; set; } = 3;
     public Dictionary<string, string[]> Roles { get; set; } = new()
     {
         ["TenantAdmin"] = ["onboarding.manage", "opening.manage", "usage.view"],
@@ -94,14 +103,23 @@ public sealed class Setup
     public LedgerDefinition[] Ledgers { get; set; } = [
         new("cash", "Cash", "Assets"), new("bank", "Bank", "Assets"),
         new("receivables", "Receivables", "Assets"), new("payables", "Payables", "Liabilities"),
-        new("opening-equity", "Opening equity", "Equity")
+        new("opening-equity", "Opening equity", "Equity"),
+        new("sales-revenue", "Sales revenue", "Income"),
+        new("output-cgst", "Output CGST", "Liabilities"),
+        new("output-sgst", "Output SGST", "Liabilities"),
+        new("output-igst", "Output IGST", "Liabilities"),
+        new("round-off", "Rounding differences", "Income"),
+        new("tds-receivable", "TDS receivable", "Assets"),
+        new("tcs-payable", "TCS payable", "Liabilities"),
+        new("bank-charges", "Bank charges", "Expenses"),
+        new("customer-advances", "Customer advances", "Liabilities")
     ];
     public Limits Limits { get; set; } = new(0, 0, 0, 0);
 }
 
 public static class SetupRules
 {
-    public static readonly string[] Documents = ["Quotation", "SalesOrder", "PurchaseOrder", "Challan", "Invoice", "Receipt"];
+    public static readonly string[] Documents = ["Quotation", "SalesOrder", "PurchaseOrder", "GoodsReceipt", "Challan", "Invoice", "Receipt"];
     public static string Gstin(string? input)
     {
         var value = input?.Trim().ToUpperInvariant() ?? "";

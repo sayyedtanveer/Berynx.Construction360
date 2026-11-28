@@ -85,6 +85,7 @@ export const forms: Record<string, Group[]> = {
         field('name', 'Branch name'),
         field('address', 'Branch address'),
         field('gstin', 'Registration', 'registration'),
+        choice('gstRegistrationType', 'GST registration type', ['Regular', 'Composition']),
       ],
     },
     {

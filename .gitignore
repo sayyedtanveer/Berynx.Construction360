@@ -26,3 +26,13 @@
 *.suo
 *.swp
 *.log
+
+# Generated test coverage
+**/coverage/
+artifacts/coverage/
+**/TestResults/
+**/coverage.json
+**/coverage.cobertura.xml
+
+# Local package-lock backup
+frontend/package-lock.backup.json

@@ -13,6 +13,7 @@ using Berynx.Domain.IdentityAccess;
 using Berynx.Domain.Masters;
 using Berynx.Domain.Onboarding;
 using Berynx.Domain.Quotations;
+using Berynx.Domain.SalesOrders;
 using Berynx.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -150,6 +151,16 @@ public static class M05Endpoints
             return Results.NotFound();
         var lines = await db.Set<M05QuotationLine>().AsNoTracking()
             .Where(x => x.QuotationId == quotationId).ToListAsync(ct);
+        var consumed = await db.Set<M06QuotationAllocation>().AsNoTracking()
+            .Where(x => x.QuotationId == quotationId)
+            .GroupBy(x => x.QuotationLineId)
+            .Select(x => new { LineId = x.Key, Quantity = x.Sum(row => row.Quantity) })
+            .ToDictionaryAsync(x => x.LineId, x => x.Quantity, ct);
+        var createdOrders = await db.Set<M06SalesOrder>().AsNoTracking()
+            .Where(x => x.SourceQuotationId == quotationId)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new { x.SalesOrderId, x.Number, x.Status, x.CreatedAt, x.Total })
+            .ToListAsync(ct);
         var charges = await db.Set<M05QuotationCharge>().AsNoTracking()
             .Where(x => x.QuotationId == quotationId).ToListAsync(ct);
         var activities = await db.Set<M05QuotationActivity>().AsNoTracking()
@@ -173,7 +184,19 @@ public static class M05Endpoints
             RateComparison = canViewCost ? quotation.RateComparisonJson : null,
             quotation.ApprovalSnapshotJson, approvalStatus = approval?.Status,
             quotation.ApprovalRequestId, quotation.Version, quotation.CreatedAt, quotation.UpdatedAt,
-            quotation.IssuedAt, quotation.AcceptedAt, quotation.RejectedAt, Lines = lines, Charges = charges, Activities = activities
+            quotation.IssuedAt, quotation.AcceptedAt, quotation.RejectedAt,
+            Lines = lines.Select(line => new
+            {
+                line.LineId, line.QuotationId, line.ProductId, line.Description,
+                line.Quantity, line.UnitCode, line.Rate, line.DiscountPercent,
+                line.GstPercent, line.TaxableAmount, line.CgstAmount, line.SgstAmount,
+                line.IgstAmount, line.TaxAmount, line.Total, line.PriceListId,
+                line.RateSource, line.RmcGrade, line.RmcSlumpBand,
+                line.RmcAdmixtureCode, line.RmcPumpType, line.TaxSnapshotJson,
+                ConsumedQuantity = consumed.GetValueOrDefault(line.LineId),
+                RemainingQuantity = Math.Max(0m, line.Quantity - consumed.GetValueOrDefault(line.LineId))
+            }),
+            Charges = charges, Activities = activities, CreatedOrders = createdOrders
         });
     }
 

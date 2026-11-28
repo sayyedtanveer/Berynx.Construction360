@@ -84,6 +84,7 @@ const CONFIGS: Record<string, MasterConfig> = {
       ...COMMON_PARTY_FIELDS,
       { key: 'customerCategory', label: 'Customer category' },
       { key: 'customerGroup', label: 'Customer group' },
+      { key: 'billingMode', label: 'Invoice billing mode', type: 'select', options: ['PerChallan', 'Daily', 'PerOrder', 'Monthly'] },
       { key: 'creditLimit', label: 'Credit limit', type: 'number', min: 0 },
       { key: 'creditDays', label: 'Credit days', type: 'number', min: 0 },
       { key: 'creditPolicy', label: 'Credit policy', type: 'select', options: ['Warn', 'SoftBlock', 'HardBlock'] },

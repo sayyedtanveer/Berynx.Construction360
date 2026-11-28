@@ -1,0 +1,13 @@
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura,json</Format>
+          <!-- Exclude only generated migrations/snapshots and composition-root bootstrap. -->
+          <ExcludeByFile>**/Persistence/Migrations/**/*.cs,**/*ModelSnapshot.cs,**/*.Designer.cs,**/Berynx.Api/Program.cs,**/Berynx.Infrastructure/DependencyInjection.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

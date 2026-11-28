@@ -1,0 +1,1 @@
+-- P1-M15 adds no tables. Dashboard metrics are read directly from source-module transactions.

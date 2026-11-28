@@ -2,12 +2,29 @@ using System.Text;
 using Berynx.Api.Auth;
 using Berynx.Api.Onboarding;
 using Berynx.Api.IdentityAccess;
+using Berynx.Application.Accounting;
+using Berynx.Application.Delivery;
+using Berynx.Application.Documents;
 using Berynx.Application.IdentityAccess;
 using Berynx.Infrastructure.Persistence;
+using Berynx.Infrastructure.Documents;
 using Berynx.Api.Errors;
 using Berynx.Api.Masters;
 using Berynx.Api.Crm;
 using Berynx.Api.Quotations;
+using Berynx.Api.SalesOrders;
+using Berynx.Api.Procurement;
+using Berynx.Api.Delivery;
+using Berynx.Api.DeliveryChallans;
+using Berynx.Api.Invoicing;
+using Berynx.Api.Receivables;
+using Berynx.Api.Promotion;
+using Berynx.Api.Quality;
+using Berynx.Api.Accounting;
+using Berynx.Api.Gst;
+using Berynx.Api.Expenses;
+using Berynx.Api.Dashboard;
+using Berynx.Api.Reports;
 using Berynx.Application.Masters;
 using Berynx.Application.Tenancy;
 using Berynx.Infrastructure;
@@ -45,12 +62,20 @@ builder.Services.AddIdentityCore<M02IdentityUser>(options =>
     .AddDefaultTokenProviders();
 var dataProtection = builder.Services.AddDataProtection().SetApplicationName("Berynx.Construction360");
 var dataProtectionDirectory = builder.Configuration["DataProtection:KeyDirectory"];
+if (string.IsNullOrWhiteSpace(dataProtectionDirectory) && builder.Environment.IsDevelopment())
+{
+    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    if (!string.IsNullOrWhiteSpace(localAppData))
+        dataProtectionDirectory = Path.Combine(localAppData, "BerynxConstruction360", "keys");
+}
 if (!string.IsNullOrWhiteSpace(dataProtectionDirectory))
 {
     Directory.CreateDirectory(dataProtectionDirectory);
+    if (!OperatingSystem.IsWindows())
+        File.SetUnixFileMode(dataProtectionDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     dataProtection.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
 }
-else if (!builder.Environment.IsDevelopment())
+else
 {
     throw new InvalidOperationException(
         "Configure DataProtection:KeyDirectory as a durable, shared, access-controlled key-ring location.");
@@ -69,9 +94,28 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("m17-public", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 builder.Services.AddScoped<M02AuthenticationService>();
 builder.Services.AddScoped<M03MasterService>();
+builder.Services.AddScoped<IM12PostingEngine, M12PostingEngine>();
+builder.Services.Configure<M18DocumentOptions>(builder.Configuration.GetSection("M18:Documents"));
+builder.Services.Configure<M18StorageOptions>(builder.Configuration.GetSection("M18:Storage"));
+builder.Services.Configure<ClamAvOptions>(builder.Configuration.GetSection("M18:Scanner"));
+builder.Services.AddSingleton<IM18DocumentStorage>(services =>
+    new FileSystemM18DocumentStorage(services.GetRequiredService<Microsoft.Extensions.Options.IOptions<M18StorageOptions>>(), builder.Environment.WebRootPath));
+builder.Services.AddSingleton<IM18MalwareScanner, ClamAvMalwareScanner>();
+builder.Services.AddScoped<IM18DocumentService, M18DocumentService>();
+builder.Services.AddScoped<IM08SecureEvidenceProvider, M18M08SecureEvidenceProvider>();
 builder.Services.AddScoped<IM05CustomerOtpProvider, UnconfiguredM05CustomerOtpProvider>();
 builder.Services.AddScoped<IM03CreditFactsProvider, M03UnavailableCreditFactsProvider>();
 builder.Services.AddScoped<IM03CreditProfileProvider, M03CreditProfileProvider>();
@@ -87,15 +131,17 @@ builder.Services.AddScoped<IM02ApprovalEngine, M02ApprovalEngine>();
 builder.Services.AddScoped<IM02TaskReassignmentProvider, M02ApprovalTaskReassignmentProvider>();
 builder.Services.AddScoped<M02AccountEmailSender>();
 builder.Services.AddScoped<M02InviteTokenService>();
-builder.Services.AddHostedService<M02ApprovalEscalationService>();
-builder.Services.AddHostedService<M02InvitationDeliveryService>();
+if (!builder.Environment.IsEnvironment("Testing")) {
+    builder.Services.AddHostedService<M02ApprovalEscalationService>();
+    builder.Services.AddHostedService<M02InvitationDeliveryService>();
+}
 builder.Services.AddScoped<Berynx.Application.Onboarding.IOpeningItems, OpeningItems>();
 builder.Services.AddScoped<Berynx.Application.Onboarding.IPostingNumbers, PostingNumbers>();
 builder.Services.AddHttpClient("invitation", client => client.Timeout = TimeSpan.FromSeconds(10))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("identity-provider", client => client.Timeout = TimeSpan.FromSeconds(10))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-builder.Services.AddHostedService<InvitationDelivery>();
+if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<InvitationDelivery>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -191,6 +237,19 @@ app.MapM02();
 app.MapM03();
 app.MapM04();
 app.MapM05();
+app.MapM06();
+app.MapM07();
+app.MapM08();
+app.MapM09();
+app.MapM10();
+app.MapM11();
+app.MapM12();
+app.MapM13();
+app.MapM14();
+app.MapM15();
+app.MapM16();
+app.MapM17();
+app.MapM19();
 
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapGet(
